@@ -12,3 +12,5 @@ Simple web UI + backend to obfuscate JavaScript using `js-confuser`.
 1. Install dependencies:
    ```bash
    npm install
+   npm start
+   node server.js
