@@ -1,13 +1,11 @@
-// server.js
-// Seren Encryptor — Express backend (full, ready-to-deploy)
-// - Uses obfuscator.js (must export obfuscateCode(code, preset, options))
-// - POST /encrypt (multipart/form-data: file, preset, filename, password, includeAntiBypass)
-// - GET  /health
+// server.js (patched)
+// Seren Encryptor — Express backend (improved error handling, CORS, obfuscation timeout)
 
 const express = require("express");
 const multer = require("multer");
 const fs = require("fs-extra");
 const path = require("path");
+const cors = require("cors");
 
 const app = express();
 app.disable("x-powered-by");
@@ -18,6 +16,7 @@ const MAX_FILE_MB = Number(process.env.MAX_FILE_MB || 10);
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 const OUTPUT_DIR = path.join(__dirname, "output");
+const OBF_TIMEOUT_MS = Number(process.env.OBF_TIMEOUT_MS || 60000); // 60s default
 
 // Ensure folders exist
 fs.ensureDirSync(UPLOAD_DIR);
@@ -25,16 +24,20 @@ fs.ensureDirSync(OUTPUT_DIR);
 
 // Try load obfuscator
 let obfuscator = null;
+let obfuscatorLoadError = null;
 try {
   obfuscator = require("./obfuscator");
   if (!obfuscator || typeof obfuscator.obfuscateCode !== "function") {
+    obfuscatorLoadError = new Error("obfuscator module found but obfuscateCode() missing");
     console.warn("[warn] obfuscator module found but obfuscateCode() missing — falling back to passthrough");
     obfuscator = null;
   } else {
     console.log("[ok] obfuscator module loaded.");
   }
 } catch (e) {
+  obfuscatorLoadError = e;
   console.warn("[warn] obfuscator module not found or errored — running in passthrough mode");
+  console.warn(e && e.stack ? e.stack : e);
   obfuscator = null;
 }
 
@@ -64,7 +67,16 @@ function safeOutFilename(origName) {
   return `${name}-encrypted.js`;
 }
 
+function withTimeout(promise, ms) {
+  let id;
+  const timeout = new Promise((_, reject) => {
+    id = setTimeout(() => reject(new Error("timeout")), ms);
+  });
+  return Promise.race([promise.finally(() => clearTimeout(id)), timeout]);
+}
+
 // Middleware
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -85,13 +97,27 @@ if (fs.existsSync(publicPath)) {
 
 // Health endpoint
 app.get("/health", (req, res) => {
-  res.json({
+  const detail = {
     status: "ok",
     uptime: process.uptime(),
     ts: Date.now(),
     obfuscator: obfuscator ? "active" : "missing",
+    obfuscatorDetail: null,
+    obfuscatorError: obfuscatorLoadError ? String(obfuscatorLoadError.message || obfuscatorLoadError) : null,
     maxFileMB: MAX_FILE_MB,
-  });
+  };
+
+  try {
+    if (obfuscator && obfuscator.PRESETS) {
+      detail.obfuscatorDetail = {
+        presets: Object.keys(obfuscator.PRESETS || {}),
+      };
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  res.json(detail);
 });
 
 // OPTIONS for /encrypt (helpful for some clients)
@@ -109,9 +135,13 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
     }
   };
 
+  // ensure we always try to cleanup
+  let uploadedPath = null;
+  let tmpPath = null;
+
   try {
     if (!req.file || !req.file.path) {
-      return res.status(400).json({ error: "No file uploaded (field 'file' required)" });
+      return res.status(400).json({ error: "No file uploaded (field 'file' required')" });
     }
 
     // validate extension
@@ -121,7 +151,7 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
     }
 
     // read uploaded file
-    const uploadedPath = req.file.path;
+    uploadedPath = req.file.path;
     const originalName = req.file.originalname;
     const code = await fs.readFile(uploadedPath, "utf8");
 
@@ -136,38 +166,60 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
       console.warn("[warn] obfuscator missing — returning original file content as download");
     }
 
-    // run obfuscator if present
+    // run obfuscator if present, with timeout
     let resultCode = code;
     if (obfuscator) {
       try {
-        resultCode = await obfuscator.obfuscateCode(code, preset, { includeAntiBypass, password });
+        // run with timeout to avoid long blocking
+        resultCode = await withTimeout(
+          obfuscator.obfuscateCode(code, preset, { includeAntiBypass, password }),
+          OBF_TIMEOUT_MS
+        );
       } catch (err) {
-        console.error("[error] obfuscation failed:", err && err.message ? err.message : err);
+        console.error("[error] obfuscation failed or timed out:", err && err.stack ? err.stack : err);
+        // cleanup uploaded file before responding
         await cleanup([uploadedPath]);
-        return res.status(500).json({ error: "Obfuscation failed", detail: err && err.message ? err.message : String(err) });
+        uploadedPath = null;
+        if (String(err.message || "").toLowerCase().includes("timeout")) {
+          return res.status(504).json({ error: "Obfuscation timeout", detail: "Obfuscation took too long" });
+        }
+        return res.status(502).json({ error: "Obfuscator error", detail: err && err.message ? err.message : String(err) });
       }
     }
 
     // write output temp file
     const tmpName = `${Date.now()}_${outFilename}`;
-    const tmpPath = path.join(OUTPUT_DIR, tmpName);
+    tmpPath = path.join(OUTPUT_DIR, tmpName);
     await fs.writeFile(tmpPath, resultCode, "utf8");
 
     // Send file as download and cleanup files afterwards
-    res.download(tmpPath, outFilename, async (err) => {
-      try {
-        await cleanup([uploadedPath, tmpPath]);
-      } catch (e) {
-        // ignore
-      }
-      if (err) {
-        console.error("[error] Failed to send file:", err);
-      } else {
-        console.log(`[ok] Sent ${outFilename} (preset=${preset})`);
-      }
-    });
+    // Use try/catch because res.download's callback may throw on streaming issues
+    try {
+      res.download(tmpPath, outFilename, async (err) => {
+        try {
+          await cleanup([uploadedPath, tmpPath]);
+        } catch (e) {
+          // ignore cleanup errors
+        }
+        if (err) {
+          console.error("[error] Failed to send file:", err && (err.stack || err));
+          // Note: headers may already be sent here; best-effort
+        } else {
+          console.log(`[ok] Sent ${outFilename} (preset=${preset})`);
+        }
+      });
+    } catch (e) {
+      console.error("[error] download failed:", e && e.stack ? e.stack : e);
+      await cleanup([uploadedPath, tmpPath]);
+      return res.status(500).json({ error: "Failed to send file", detail: String(e) });
+    }
+
   } catch (err) {
-    console.error("[fatal] /encrypt error:", err && err.message ? err.message : err);
+    console.error("[fatal] /encrypt error:", err && err.stack ? err.stack : err);
+    try {
+      // when possible, attempt to cleanup any temp files
+      await cleanup([uploadedPath, tmpPath].filter(Boolean));
+    } catch {}
     return res.status(500).json({ error: "Internal server error", detail: err && err.message ? err.message : String(err) });
   }
 });
@@ -203,6 +255,15 @@ app.use((err, req, res, next) => {
 // Start server with graceful shutdown
 const server = app.listen(PORT, () => {
   console.log(`🚀 Seren Encryptor server listening on port ${PORT} (max ${MAX_FILE_MB} MB upload)`);
+});
+
+// global guards: log and avoid crashing unhandled rejections
+process.on("unhandledRejection", (reason, p) => {
+  console.error("[unhandledRejection]", reason && (reason.stack || reason));
+});
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException] (will not exit):", err && (err.stack || err));
+  // in production you might want to exit and rely on process manager to restart
 });
 
 function gracefulShutdown(sig) {
