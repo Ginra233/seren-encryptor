@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Seren Encryptor — JS File Protector</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* ---------- base theme vars (dark default) ---------- */
+  :root{
+    --bg-1: #050416;
+    --bg-2: #071026;
+    --card: rgba(255,255,255,0.03);
+    --muted: #9ba3b8;
+    --text: #e9eef8;
+    --accent-1: #7c3aed; /* purple */
+    --accent-2: #00c6ff; /* cyan */
+    --accent-3: #34d399; /* green */
+    --danger: #ef4444;
+    --glass: rgba(255,255,255,0.02);
+    --radius: 14px;
+    --shadow: 0 12px 40px rgba(2,6,23,0.6);
+    --transition: 230ms cubic-bezier(.2,.9,.2,1);
+    --surface: linear-gradient(180deg, rgba(255,255,255,0.008), rgba(255,255,255,0.004));
+  }
+
+  /* ---------- auto light theme if system prefers light ---------- */
+  @media (prefers-color-scheme: light) {
+    :root{
+      --bg-1: #f6f8fb;
+      --bg-2: #eef3fb;
+      --card: rgba(10,16,30,0.03);
+      --muted: #596377;
+      --text: #061228;
+      --accent-1: #4f46e5;
+      --accent-2: #06b6d4;
+      --accent-3: #059669;
+      --danger: #dc2626;
+      --glass: rgba(8,12,20,0.02);
+      --shadow: 0 12px 30px rgba(6,10,20,0.06);
+      --surface: linear-gradient(180deg, rgba(0,0,0,0.02), rgba(0,0,0,0.01));
+    }
+  }
+
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;
+    background:
+      radial-gradient(600px 300px at 12% 6%, rgba(124,58,237,0.06), transparent 9%),
+      linear-gradient(180deg,var(--bg-1),var(--bg-2));
+    color:var(--text);
+    -webkit-font-smoothing:antialiased;
+    padding:28px 12px;
+    display:flex;
+    justify-content:center;
+  }
+
+  .wrap{width:100%;max-width:980px}
+
+  header{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    background:var(--card);padding:18px 20px;border-radius:12px;border:1px solid rgba(255,255,255,0.03);
+    box-shadow:var(--shadow);backdrop-filter:blur(8px);
+  }
+  .brand{display:flex;gap:14px;align-items:center}
+  .logo{
+    width:56px;height:56px;border-radius:12px;display:grid;place-items:center;
+    background:linear-gradient(135deg,var(--accent-1),var(--accent-2));
+    box-shadow:0 8px 28px rgba(124,58,237,0.08);
+    flex-shrink:0;
+  }
+  .logo svg{width:40px;height:40px}
+  .title h1{margin:0;font-size:20px;font-weight:800;background:linear-gradient(90deg,var(--accent-1),var(--accent-2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+  .title p{margin:0;margin-top:2px;color:var(--muted);font-size:13px}
+
+  .server{
+    display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.03);
+    font-weight:700;font-size:13px;color:var(--muted);
+  }
+  .server .dot{width:12px;height:12px;border-radius:50%;background:var(--danger);box-shadow:0 0 10px rgba(239,68,68,0.6)}
+  .server.online .dot{background:var(--accent-3);box-shadow:0 0 12px rgba(52,211,153,0.48)}
+  .server .txt{font-weight:700;color:var(--muted)}
+  .server.online .txt{color:var(--text)}
+
+  .grid{display:grid;grid-template-columns:1fr;gap:20px;margin-top:20px}
+  .card{background:var(--card);border-radius:14px;padding:18px;border:1px solid rgba(255,255,255,0.03);box-shadow:0 10px 40px rgba(8,8,20,0.45);backdrop-filter:blur(10px)}
+  @media(min-width:900px){ .grid{grid-template-columns:1fr 360px;align-items:start} }
+
+  /* drop area */
+  .drop{
+    border-radius:12px;border:2px dashed rgba(255,255,255,0.04);padding:34px;display:flex;flex-direction:column;align-items:center;gap:10px;background:var(--surface);
+    transition:box-shadow var(--transition),transform var(--transition),border-color var(--transition);
+  }
+  .drop.hover{border-color:rgba(124,58,237,0.28);box-shadow:0 14px 40px rgba(124,58,237,0.06);transform:translateY(-6px)}
+  .drop .icon{width:62px;height:62px;border-radius:12px;display:grid;place-items:center;font-size:30px;color:var(--accent-2);background:rgba(0,198,255,0.06)}
+  .drop h3{margin:0;font-size:18px;font-weight:700;color:var(--text)}
+  .drop p{margin:0;color:var(--muted);font-size:13px}
+
+  .controls-row{display:flex;gap:12px;align-items:center;margin-top:12px}
+
+  .btn-primary{display:inline-flex;align-items:center;gap:10px;padding:10px 18px;border-radius:12px;background:linear-gradient(90deg,var(--accent-1),var(--accent-2));color:white;font-weight:700;border:none;cursor:pointer;box-shadow:0 8px 30px rgba(99,102,241,0.12)}
+  .btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted);padding:10px 16px;border-radius:10px;cursor:pointer}
+
+  /* Security notice */
+  .notice{
+    margin-top:14px;padding:14px;border-radius:12px;position:relative;
+    background:linear-gradient(90deg, rgba(255,150,50,0.06), rgba(255,150,50,0.01));
+    border:1px solid rgba(255,150,50,0.09);
+    color:#fff5eb;
+  }
+  .notice .head{display:flex;gap:12px;align-items:flex-start}
+  .notice strong{font-size:15px;color:#ffd8b0}
+  .notice p{margin:8px 0 0;color:rgba(255,255,255,0.95);font-size:14px;line-height:1.45}
+
+  /* methods */
+  .methods .heading{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .methods .heading h3{margin:0;font-size:16px;color:var(--accent-2);font-weight:800}
+  .method-list{display:grid;gap:12px}
+  .method{
+    display:flex;align-items:center;justify-content:space-between;padding:14px;border-radius:12px;border:1px solid rgba(255,255,255,0.03);
+    background:linear-gradient(180deg, rgba(255,255,255,0.004), rgba(255,255,255,0.002));
+    transition: box-shadow var(--transition), transform var(--transition), border-color var(--transition);
+  }
+  .method:hover{box-shadow:0 10px 30px rgba(6,182,212,0.03);transform:translateY(-4px);border-color:rgba(6,182,212,0.06)}
+  .method-left{display:flex;gap:12px;align-items:center;min-width:0}
+  .badge{width:44px;height:44px;border-radius:10px;display:grid;place-items:center;font-weight:700;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.02);flex-shrink:0}
+  .meta{display:flex;flex-direction:column;min-width:0}
+  .meta .name{font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meta .desc{font-size:13px;color:var(--muted);margin-top:6px;white-space:normal;opacity:.95}
+  .method-right{display:flex;align-items:center;gap:16px}
+  .radio{width:20px;height:20px;border-radius:50%;border:2px solid rgba(255,255,255,0.08);display:grid;place-items:center;cursor:pointer;transition:all var(--transition)}
+  .radio.active{border-color:var(--accent-2);box-shadow:0 0 10px rgba(0,198,255,0.12);background:linear-gradient(90deg,rgba(0,198,255,0.06),rgba(124,58,237,0.04))}
+  .level{color:var(--muted);font-size:13px;white-space:nowrap}
+
+  /* action */
+  .action{margin-top:16px;display:flex;flex-direction:column;gap:12px}
+  .controls{display:flex;gap:14px;align-items:center}
+  .switch{
+    --w:46px;--h:24px;position:relative;width:var(--w);height:var(--h);border-radius:999px;background:rgba(255,255,255,0.06);cursor:pointer;flex-shrink:0;
+  }
+  .switch .knob{position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--transition)}
+  .switch.on{background:linear-gradient(90deg,var(--accent-1),var(--accent-2));box-shadow:0 8px 28px rgba(99,102,241,0.12)}
+  .switch.on .knob{transform:translateX(22px)}
+
+  .big-btn{width:100%;padding:14px;border-radius:14px;border:none;background:linear-gradient(90deg,var(--accent-3),#10b981);color:#022;font-weight:800;font-size:15px;cursor:pointer;box-shadow:0 12px 40px rgba(16,185,129,0.12);transition:transform var(--transition),box-shadow var(--transition)}
+  .big-btn:hover{transform:translateY(-4px);box-shadow:0 18px 60px rgba(16,185,129,0.16)}
+  .big-btn[disabled]{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none}
+
+  .progress-wrap{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:6px}
+  .progress-bar{height:8px;background:rgba(255,255,255,0.02);border-radius:999px;width:64%;overflow:hidden}
+  .progress-bar > i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--accent-1),var(--accent-2));transition:width 420ms ease}
+
+  .preview{margin-top:20px;padding:18px;border-radius:12px;border:1px solid rgba(255,255,255,0.03);background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));display:flex;flex-direction:column;align-items:center;gap:12px}
+  .preview .icon{width:64px;height:64px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(90deg,var(--accent-1),var(--accent-2));box-shadow:0 8px 24px rgba(124,58,237,0.12)}
+  .preview p{margin:0;color:var(--muted)}
+
+  .small-card{margin-top:12px;padding:12px;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.004));border:1px solid rgba(255,255,255,0.03);color:var(--muted)}
+  footer{margin-top:18px;text-align:center;color:var(--muted)}
+  /* --- OBF Status animation --- */
+@keyframes pulseOnline {
+  0%, 100% { box-shadow: 0 0 6px rgba(52,211,153,0.4); }
+  50% { box-shadow: 0 0 16px rgba(52,211,153,0.9); }
+}
+
+/* Success notice */
+#encNotice {
+  background: linear-gradient(180deg, rgba(34,197,94,0.06), rgba(34,197,94,0.02));
+  border: 1px solid rgba(34,197,94,0.10);
+  color: var(--text);
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  box-shadow: 0 10px 30px rgba(16,185,129,0.04);
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+#encNotice .left {flex:1;min-width:0}
+#encNotice .title {font-weight:800;color:var(--accent-3);margin-bottom:6px}
+#encNotice .commands {background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;font-family:monospace;font-size:13px;display:flex;gap:8px;align-items:center}
+#encNotice button.copyBtn {
+  background:transparent;border:1px solid rgba(255,255,255,0.06);padding:6px 10px;border-radius:8px;color:var(--text);cursor:pointer;font-weight:700;
+}
+#encNotice .right {display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+#encNotice .closeBtn {background:transparent;border:none;color:var(--muted);cursor:pointer;font-weight:700}
+
+.obf-online {
+  background: var(--accent-3) !important;
+  animation: pulseOnline 1.8s infinite;
+}
+
+.obf-offline {
+  background: var(--danger) !important;
+  animation: none;
+}
+</style>
+</head>
+<body>
+  <div class="wrap" id="app">
+    <header>
+      <div class="brand">
+        <div class="logo" aria-hidden>
+  <img src="logo.jpg" alt="Logo Seren" style="width:56px;height:56px;border-radius:12px;object-fit:cover;">
+</div>
+        <div class="title">
+          <h1>Seren Encryptor</h1>
+          <p>JavaScript File Protector</p>
+        </div>
+      </div>
+
+      <div id="serverBox" class="server" role="status" aria-live="polite">
+        <div id="serverDot" class="dot" aria-hidden></div>
+        <div id="serverText" class="txt">Server: Offline</div>
+      </div>
+    </header>
+
+    <main class="grid" role="main">
+      <!-- left -->
+      <section class="card" aria-labelledby="main-tools">
+        <div id="drop" class="drop" aria-label="Drop your JS file">
+          <div class="icon" aria-hidden>
+            <!-- upload icon -->
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 3v12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M8 7l4-4 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <rect x="3" y="17" width="18" height="3" rx="1" fill="currentColor" opacity="0.06"/>
+            </svg>
+          </div>
+          <h3 id="dropTitle">Drop your .js file here</h3>
+          <p id="dropSub">or click <strong style="color:var(--accent-2)">Browse Files</strong></p>
+          <p style="margin-top:10px;color:var(--muted);font-size:12px">Maximum file size: <strong>10MB</strong></p>
+        </div>
+
+        <div class="controls-row">
+          <button id="browseBtn" class="btn-primary" type="button" aria-label="Browse files">
+            <!-- folder svg -->
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="margin-right:8px">
+              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.95"/>
+            </svg>
+            Browse Files
+          </button>
+          <button id="resetBtn" class="btn-ghost" type="button">Reset</button>
+          <div id="fileInfo" style="color:var(--muted);font-size:13px;margin-left:auto" aria-live="polite"></div>
+        </div>
+
+        <!-- security notice -->
+        <div class="notice" role="note" aria-live="polite">
+          <div class="head">
+            <div class="badge" aria-hidden>
+              <!-- warning SVG -->
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" fill="rgba(255,150,50,0.14)"/><path d="M12 9v4" stroke="#ffb579" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 17h.01" stroke="#ffb579" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div>
+              <strong>Security Notice</strong>
+              <p>
+                Proses enkripsi/obfuscation untuk perlindungan kode dan privasi dasar. Jangan gunakan untuk menyembunyikan kode berbahaya.
+                File akan <strong style="color:var(--text)">dihapus otomatis setelah 60 menit</strong>. Simpan salinan sumber sebelum mengunggah.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- methods -->
+        <div style="margin-top:18px" class="methods" id="main-tools">
+          <div class="heading"><h3>Obfuscation Methods</h3></div>
+          <div class="method-list" id="methodList">
+            <!-- Nova Prime -->
+            <div class="method" data-value="nova-prime" tabindex="0">
+              <div class="method-left">
+                <div class="badge" aria-hidden>
+                  <!-- nova icon -->
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.9 4.6L18 8l-4 2.6L12 16l-2-5.4L6 8l4.1-1.4L12 3z" fill="url(#g1)"/><defs><linearGradient id="g1" x1="0" x2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#06b6d4"/></linearGradient></defs></svg>
+                </div>
+                <div class="meta">
+                  <div class="name">Nova Prime</div>
+                  <div class="desc">Advanced control-flow transforms + string encoding</div>
+                </div>
+              </div>
+              <div class="method-right">
+                <div class="level">Very High</div>
+                <div class="radio" role="button" aria-label="select"></div>
+              </div>
+            </div>
+
+            <!-- Aether -->
+            <div class="method" data-value="aether" tabindex="0">
+              <div class="method-left">
+                <div class="badge">
+                  <!-- swirl -->
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2a10 10 0 1 0 10 10" stroke="#7c3aed" stroke-width="1.4" stroke-linecap="round"/></svg>
+                </div>
+                <div class="meta">
+                  <div class="name">Aether</div>
+                  <div class="desc">Compact mode with runtime guards for lightweight protection</div>
+                </div>
+              </div>
+              <div class="method-right">
+                <div class="level">Medium</div>
+                <div class="radio" role="button" aria-label="select"></div>
+              </div>
+            </div>
+
+            <!-- Helix Core -->
+            <div class="method" data-value="helix-core" tabindex="0">
+              <div class="method-left">
+                <div class="badge">
+                  <!-- shield -->
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2l7 4v6c0 5-4.5 9.5-7 10-2.5-.5-7-5-7-10V6l7-4z" stroke="#06b6d4" stroke-width="1.2" fill="none"/></svg>
+                </div>
+                <div class="meta">
+                  <div class="name">Helix Core</div>
+                  <div class="desc">Hybrid AES wrapper + anti-debug layers (best for distribution)</div>
+                </div>
+              </div>
+              <div class="method-right">
+                <div class="level">Maximum</div>
+                <div class="radio" role="button" aria-label="select"></div>
+              </div>
+            </div>
+
+            <!-- Spectra -->
+            <div class="method" data-value="spectra" tabindex="0">
+              <div class="method-left">
+                <div class="badge">
+                  <!-- wave -->
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M2 12c4 0 4-6 8-6s4 6 8 6 4-6 8-6" stroke="#34d399" stroke-width="1.4" stroke-linecap="round" fill="none"/></svg>
+                </div>
+                <div class="meta">
+                  <div class="name">Spectra</div>
+                  <div class="desc">Size-optimized encoding — minimal runtime overhead</div>
+                </div>
+              </div>
+              <div class="method-right">
+                <div class="level">Medium</div>
+                <div class="radio" role="button" aria-label="select"></div>
+              </div>
+            </div>
+
+            <!-- Oblivion -->
+            <div class="method" data-value="oblivion" tabindex="0">
+              <div class="method-left">
+                <div class="badge">
+                  <!-- compass -->
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2l3 7 7 3-7 3-3 7-3-7-7-3 7-3 3-7z" stroke="#7c3aed" stroke-width="1.2" fill="none"/></svg>
+                </div>
+                <div class="meta">
+                  <div class="name">Oblivion</div>
+                  <div class="desc">Layered mapping + randomized symbol mapping</div>
+                </div>
+              </div>
+              <div class="method-right">
+                <div class="level">High</div>
+                <div class="radio" role="button" aria-label="select"></div>
+              </div>
+            </div>
+
+          </div>
+
+          <div class="action">
+            <div class="controls">
+              <label style="display:flex;align-items:center;gap:8px">
+                <div id="pwSwitch" class="switch" role="switch" aria-checked="false" tabindex="0"><div class="knob"></div></div>
+                <span style="color:var(--muted);font-weight:600">Password Protect</span>
+              </label>
+
+              <label style="display:flex;align-items:center;gap:8px">
+                <div id="bypassSwitch" class="switch" role="switch" aria-checked="false" tabindex="0"><div class="knob"></div></div>
+                <span style="color:var(--muted);font-weight:600">Enable Anti-Bypass</span>
+              </label>
+
+              <div id="pwWrap" style="margin-left:auto;display:none">
+                <input id="password" type="password" placeholder="Masukkan password" style="padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:var(--text)">
+              </div>
+            </div>
+
+            <button id="encryptBtn" class="big-btn" disabled aria-disabled="true" aria-label="Encrypt and download">
+              <!-- lightning svg -->
+              <svg width="18" height="18" viewBox="0 0 24 24" style="margin-right:10px" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" fill="white" opacity="0.9"/>
+              </svg>
+              Encrypt & Download
+            </button>
+
+            <div class="progress-wrap" aria-hidden>
+            <!-- Encryption success notice (hidden by default) -->
+<div id="encNotice" style="display:none;margin-top:14px"></div>
+              <div class="progress-bar"><i id="progress" style="width:0%"></i></div>
+              <div id="statusText" style="color:var(--muted);font-size:13px">Menunggu file...</div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="preview" aria-hidden>
+          <div class="icon">
+            <!-- shield/eye icon -->
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v5c0 6-5 10-7 11-2-1-7-5-7-11V7l7-4z" fill="white" opacity="0.06"/><path d="M12 8v5" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </div>
+          <p style="font-weight:700;color:var(--muted)">Preview disabled for security</p>
+          <p style="color:var(--muted);font-size:13px;margin-top:0">Original code preview is disabled to protect your privacy.</p>
+        </div>
+      </section>
+
+      <!-- right -->
+      <aside class="card" aria-label="Sidebar">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <h3 style="margin:0;color:var(--accent-2)">Integrations</h3>
+            <div style="margin-top:10px;color:var(--muted);font-size:13px">OBF Status</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
+            <div id="obfDot" style="width:10px;height:10px;border-radius:50%;background:var(--danger)"></div>
+            <div style="background:rgba(255,255,255,0.02);padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,0.03);color:var(--muted);font-weight:700">Offline</div>
+          </div>
+        </div>
+        <div id="obfInfo" style="margin-top:8px;color:var(--muted);font-size:12px;text-align:right;opacity:0.85">
+  Obfuscator: unknown
+</div>
+
+        <div class="small-card" style="margin-top:18px">
+          <div style="font-weight:700;color:var(--muted)">Real-time Obfuscate</div>
+          <div style="margin-top:8px;color:var(--muted)">Enabled</div>
+        </div>
+
+        <div class="small-card" style="margin-top:12px">
+          <div style="font-weight:700;color:var(--muted)">Owner Help</div>
+          <div style="margin-top:8px;color:var(--muted)">@Serenhope -- 081318296708</div>
+        </div>
+
+        <div style="margin-top:12px;padding:12px;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.004));border:1px solid rgba(255,255,255,0.03);color:var(--muted);font-size:13px">
+          <strong style="color:var(--accent-1)">Info</strong>
+          <div style="margin-top:8px">File upload and obfuscation activities are private. Owner cannot view the original file content.</div>
+        </div>
+      </aside>
+    </main>
+
+    <footer>© 2025 Seren Encryptor • Keamanan yang terjamin</footer>
+  </div>
+
+<script>
+/* -------------------------
+   Elements & state
+   ------------------------- */
+const drop = document.getElementById('drop');
+const browseBtn = document.getElementById('browseBtn');
+const fileInput = document.createElement('input');
+fileInput.type = 'file'; fileInput.accept = '.js';
+const fileInfo = document.getElementById('fileInfo');
+const encryptBtn = document.getElementById('encryptBtn');
+const progressEl = document.getElementById('progress');
+const statusText = document.getElementById('statusText');
+const pwSwitch = document.getElementById('pwSwitch');
+const bypassSwitch = document.getElementById('bypassSwitch');
+const pwWrap = document.getElementById('pwWrap');
+const passwordInput = document.getElementById('password');
+
+let chosenFile = null;
+let chosenMethod = 'nova-prime';
+let serverOnline = false;
+
+/* methods */
+const methods = Array.from(document.querySelectorAll('.method'));
+function setActiveMethod(el){
+  methods.forEach(m=>{
+    m.classList.remove('selected');
+    const r = m.querySelector('.radio');
+    if(r) r.classList.remove('active');
+  });
+  el.classList.add('selected');
+  const radio = el.querySelector('.radio');
+  if(radio) radio.classList.add('active');
+  chosenMethod = el.dataset.value;
+  checkReady();
+}
+setActiveMethod(methods[0]);
+methods.forEach(m=>{
+  m.addEventListener('click', ()=> setActiveMethod(m));
+  m.addEventListener('keydown', e=> { if(e.key==='Enter' || e.key===' ') setActiveMethod(m); });
+});
+
+/* file handling */
+drop.addEventListener('dragover', e=>{ e.preventDefault(); drop.classList.add('hover'); });
+drop.addEventListener('dragleave', ()=> drop.classList.remove('hover') );
+drop.addEventListener('drop', e=> {
+  e.preventDefault(); drop.classList.remove('hover');
+  const f = e.dataTransfer.files && e.dataTransfer.files[0];
+  if(f) handleFile(f);
+});
+
+browseBtn.addEventListener('click', ()=> fileInput.click() );
+fileInput.addEventListener('change', e=> { if(e.target.files && e.target.files[0]) handleFile(e.target.files[0]); });
+
+function handleFile(f){
+  if(!f.name.endsWith('.js')) { statusText.textContent = '❌ Hanya file .js diperbolehkan'; return; }
+  if(f.size > 10 * 1024 * 1024) { statusText.textContent = '❌ File terlalu besar (max 10MB)'; return; }
+  chosenFile = f;
+  fileInfo.textContent = `${f.name} • ${(f.size/1024).toFixed(1)} KB`;
+  statusText.textContent = '✅ File siap untuk dienkripsi';
+  checkReady();
+}
+
+/* reset */
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  chosenFile = null; fileInfo.textContent = ''; statusText.textContent = 'Menunggu file...'; progressEl.style.width = '0%'; encryptBtn.disabled = true; encryptBtn.setAttribute('aria-disabled','true');
+});
+
+/* switches behavior */
+function toggleSwitch(elem, state){
+  if(state){
+    elem.classList.add('on'); elem.setAttribute('aria-checked','true');
+  } else {
+    elem.classList.remove('on'); elem.setAttribute('aria-checked','false');
+  }
+}
+pwSwitch.addEventListener('click', ()=>{
+  const on = !pwSwitch.classList.contains('on');
+  toggleSwitch(pwSwitch,on);
+  pwWrap.style.display = on ? 'block' : 'none';
+});
+pwSwitch.addEventListener('keydown', e=> { if(e.key==='Enter' || e.key===' ') { e.preventDefault(); pwSwitch.click(); } });
+
+bypassSwitch.addEventListener('click', ()=>{
+  const on = !bypassSwitch.classList.contains('on');
+  toggleSwitch(bypassSwitch,on);
+});
+bypassSwitch.addEventListener('keydown', e=> { if(e.key==='Enter' || e.key===' ') { e.preventDefault(); bypassSwitch.click(); } });
+
+/* server health check */
+const serverBox = document.getElementById('serverBox');
+const serverDot = document.getElementById('serverDot');
+const serverText = document.getElementById('serverText');
+const obfDot = document.getElementById('obfDot');
+
+async function checkServer(){
+  try{
+    const res = await fetch('/health', {cache:'no-store'});
+    const ok = res.ok;
+    serverOnline = ok;
+
+    const obfLabel = obfDot?.nextElementSibling; // ambil label "Offline" di kanan titik
+
+    if(ok){
+      serverBox.classList.add('online');
+      serverDot.classList.remove('off');
+      serverDot.classList.add('on');
+      serverText.textContent = 'Server: Online';
+
+      if(obfDot){
+        obfDot.classList.remove('obf-offline');
+        obfDot.classList.add('obf-online');
+      }
+      if(obfLabel) obfLabel.textContent = 'Online';
+    } else {
+      serverBox.classList.remove('online');
+      serverDot.classList.remove('on');
+      serverDot.classList.add('off');
+      serverText.textContent = 'Server: Offline';
+
+      if(obfDot){
+        obfDot.classList.remove('obf-online');
+        obfDot.classList.add('obf-offline');
+      }
+      if(obfLabel) obfLabel.textContent = 'Offline';
+    }
+
+  } catch(err){
+    serverOnline = false;
+    serverBox.classList.remove('online');
+    serverDot.classList.remove('on');
+    serverDot.classList.add('off');
+    serverText.textContent = 'Server: Offline';
+
+    if(obfDot){
+      obfDot.classList.remove('obf-online');
+      obfDot.classList.add('obf-offline');
+    }
+    const obfLabel = obfDot?.nextElementSibling;
+    if(obfLabel) obfLabel.textContent = 'Offline';
+  }
+
+  checkReady();
+}
+checkServer();
+setInterval(checkServer, 5000);
+
+/* enable button only when file + server ready */
+function checkReady(){
+  const ready = chosenFile !== null && serverOnline;
+  encryptBtn.disabled = !ready;
+  encryptBtn.setAttribute('aria-disabled', String(!ready));
+}
+
+/* encrypt & download */
+encryptBtn.addEventListener('click', async ()=>{
+  if(!serverOnline){ statusText.textContent = '❌ Server offline'; return; }
+  if(!chosenFile){ statusText.textContent = '⚠️ Pilih file .js dahulu'; return; }
+
+  encryptBtn.disabled = true;
+  encryptBtn.setAttribute('aria-disabled','true');
+  statusText.textContent = '⏳ Mengunggah & memproses...';
+  progressEl.style.width = '8%';
+
+  const fd = new FormData();
+  fd.append('file', chosenFile, chosenFile.name);
+  fd.append('preset', chosenMethod);
+  fd.append('includeAntiBypass', bypassSwitch.classList.contains('on') ? '1' : '0');
+  if(pwSwitch.classList.contains('on')) fd.append('password', passwordInput.value || '');
+
+  try{
+    const res = await fetch('/encrypt', { method: 'POST', body: fd });
+    if(!res.ok) throw new Error('Server error: ' + res.status);
+    progressEl.style.width = '68%';
+    const blob = await res.blob();
+    progressEl.style.width = '100%';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = ('enc-' + chosenFile.name) || 'Encrypted.js';
+    document.body.appendChild(a); a.click(); a.remove();
+    const downloadedName = a.download || ('enc-' + (chosenFile && chosenFile.name ? chosenFile.name : 'file.js'));
+    statusText.textContent = '✅ Selesai! File diunduh.';
+    try { showEncNotice(downloadedName); } catch(e){ console.warn('showEncNotice failed', e); }
+  }catch(err){
+    console.error(err);
+    statusText.textContent = '❌ Gagal: ' + (err.message || 'server error');
+  } finally {
+    setTimeout(()=> progressEl.style.width = '0%', 1200);
+    checkReady();
+  }
+// --- show encryption success notice + copy button ---
+function showEncNotice(filename) {
+  const encNotice = document.getElementById('encNotice');
+  if (!encNotice) return;
+
+  const installCmd = 'npm install readline axios chalk@4 path';
+  const html = `
+    <div class="left">
+      <div class="title">✅ Berhasil mengenkripsi file!</div>
+      <div style="color:var(--muted);font-size:13px;margin-bottom:8px">
+        💡 Salin file hasil enkripsi (<strong style="color:var(--text)">${filename}</strong>) lalu pasang di project kamu.
+        Sebelum menjalankan, pastikan paket ini terpasang:
+      </div>
+      <div class="commands">
+        <div style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${installCmd}</div>
+        <button class="copyBtn" id="copyCmdBtn">Salin</button>
+      </div>
+    </div>
+    <div class="right">
+      <button class="closeBtn" id="closeEncNotice">Tutup</button>
+    </div>
+  `;
+  encNotice.innerHTML = html;
+  encNotice.style.display = 'flex';
+
+  // copy button
+  const copyBtn = document.getElementById('copyCmdBtn');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(installCmd);
+        copyBtn.textContent = 'Tersalin ✓';
+        setTimeout(()=> copyBtn.textContent = 'Salin', 2000);
+      } catch (e) {
+        // fallback
+        const ta = document.createElement('textarea');
+        ta.value = installCmd;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); copyBtn.textContent = 'Tersalin ✓'; } catch (err) { copyBtn.textContent = 'Copy gagal'; }
+        ta.remove();
+        setTimeout(()=> copyBtn.textContent = 'Salin', 2000);
+      }
+    }, { once: true });
+  }
+
+  // close button
+  const closeBtn = document.getElementById('closeEncNotice');
+  if (closeBtn) closeBtn.addEventListener('click', ()=> { encNotice.style.display='none'; }, { once: true });
+}  
+});
+
+/* prevent default drag/drop outside */
+window.addEventListener('dragover', e=> e.preventDefault());
+window.addEventListener('drop', e=> e.preventDefault());
+</script>
+</body>
+</html>
