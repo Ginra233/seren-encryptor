@@ -279,44 +279,58 @@ function getOblivionConfig() {
 
 // -------------------- Anti-bypass snippet --------------------
 const TByypas = `(async () => {
-  try {
-    const fs = require("fs");
-    const path = require("path");
-    const pkgPath = path.join(process.cwd(), "package.json");
-    const pkg = fs.existsSync(pkgPath) ? JSON.parse(fs.readFileSync(pkgPath, "utf8")) : {};
-    const mainFile = path.resolve(process.cwd(), pkg.main || process.argv[1]);
-    const snapshot = fs.existsSync(mainFile) ? fs.readFileSync(mainFile, "utf8") : "";
-
-    setInterval(() => {
-      if (fs.existsSync(mainFile) && fs.readFileSync(mainFile, "utf8") !== snapshot) {
-        console.log("[⚠️] Source modified! Exiting...");
-        process.exit(1);
-      }
-    }, 3000);
-  } catch {}
+  const fs = require("fs");
+  const path = require("path");
+  const C = require("chalk");
+  const A = require("axios");
+  const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8"));
+  let mainFile;
+  if (pkg.main) {
+    mainFile = path.resolve(process.cwd(), pkg.main);
+  } else if (pkg.scripts && pkg.scripts.start) {
+    const parts = pkg.scripts.start.split(" ");
+    mainFile = path.resolve(process.cwd(), parts[parts.length - 1]);
+  } else {
+    mainFile = process.argv[1];
+  }
+  const snapshot = fs.readFileSync(mainFile, "utf8");
+  setInterval(() => {
+    const now = fs.readFileSync(mainFile, "utf8");
+    if (snapshot !== now) {
+      console.log(C.redBright("[ ⚠️ ] File sedang dirombak!"));
+      process.abort();
+    }
+  }, 2000);
+  if (A.interceptors && A.interceptors.request.handlers.length > 0) {
+    console.log(C.redBright("[ ⚠️ ] Axios interceptor detected!"));
+    process.abort();
+  }
+  Object.freeze(A);
+  Object.seal(A);
 })();`;
 
 // -------------------- Password wrapper --------------------
 function createPasswordTemplate(encodedPassword, originalCode) {
   return `${TByypas}
 (async () => {
-  try {
-    const readline = require('readline');
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    console.clear();
-    console.log("🔒 ENTER PASSWORD TO RUN:");
-    rl.question('> ', (input) => {
-      const correct = Buffer.from('${encodedPassword}', 'base64').toString('utf8');
-      if (input !== correct) {
-        console.log("❌ INVALID PASSWORD");
-        process.exit(1);
-      }
-      rl.close();
-${originalCode}
-    });
-  } catch (e) {
-    console.error("Password handler failed:", e);
+const readline = require('readline');
+const chalk = require('chalk');
+const passwordBuffer = Buffer.from('${encodedPassword}', 'base64');
+const correctPassword = passwordBuffer.toString('utf8');
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
+console.clear();
+console.log(chalk.bold.red("🔑 MASUKKAN PASSWORD:"));
+rl.question('> ', (inputPassword) => {
+  if (inputPassword !== correctPassword) {
+    console.log(chalk.bold.red("❌ PASSWORD SALAH"));
+    process.exit(1);
   }
+${originalCode}
+  rl.close();
+});
 })();`;
 }
 
