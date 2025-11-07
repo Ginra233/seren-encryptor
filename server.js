@@ -1,160 +1,155 @@
-// server.js
-// Seren Encryptor backend (Express)
-// - Serves static frontend in ./public
-// - GET /health
-// - POST /encrypt (multipart/form-data: file, preset, filename, password, includeAntiBypass)
+// server.js — Seren Encryptor Backend (Final Version)
+// -----------------------------------------------
+// Secure, production-ready Express backend for JS encryption/obfuscation.
 
 const express = require("express");
 const multer = require("multer");
 const fs = require("fs-extra");
 const path = require("path");
+const helmet = require("helmet");
+const compression = require("compression");
+const chalk = require("chalk");
 
 const app = express();
 app.disable("x-powered-by");
 
 // ====== Config ======
 const PORT = process.env.PORT || 3000;
-const MAX_FILE_MB = parseInt(process.env.MAX_FILE_MB || "5", 10); // default 5 MB
+const MAX_FILE_MB = parseInt(process.env.MAX_FILE_MB || "10", 10);
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
-// Try to load obfuscator module (optional)
+// ====== Middleware ======
+app.use(helmet());
+app.use(compression());
+app.use(express.urlencoded({ extended: false }));
+app.use(express.json());
+
+// ====== Load obfuscator module (optional) ======
 let obfuscator = null;
 try {
   obfuscator = require("./obfuscator");
   if (typeof obfuscator.obfuscateCode !== "function") {
-    console.warn("[server] ./obfuscator found but obfuscateCode() not exported. Falling back to passthrough.");
+    console.warn(chalk.yellow("[warn] Invalid obfuscator module — missing obfuscateCode()"));
     obfuscator = null;
   } else {
-    console.log("[server] obfuscator module loaded.");
+    console.log(chalk.green("[ok] Obfuscator module loaded"));
   }
-} catch (e) {
-  console.warn("[server] ./obfuscator not found or failed to load. Serving passthrough (no obfuscation).", e.message);
+} catch {
+  console.warn(chalk.yellow("[warn] ./obfuscator not found — running in passthrough mode"));
   obfuscator = null;
 }
 
-// Multer (memory storage)
+// ====== Multer setup ======
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_FILE_BYTES },
 });
 
-// ====== Helpers ======
+// ====== Helper functions ======
 function parseBool(value) {
   if (value === undefined || value === null) return false;
   if (typeof value === "boolean") return value;
   const s = String(value).toLowerCase().trim();
-  return s === "1" || s === "true" || s === "on" || s === "yes";
+  return ["1", "true", "on", "yes"].includes(s);
 }
 
-// ====== Health endpoint ======
+// ====== Routes ======
+
+// --- Health check
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", uptime: process.uptime(), ts: Date.now() });
+  res.json({
+    status: "ok",
+    uptime: process.uptime(),
+    timestamp: Date.now(),
+    obfuscator: obfuscator ? "active" : "missing",
+  });
 });
 
-// ====== OPTIONS for CORS/clients ======
+// --- OPTIONS for CORS
 app.options("/encrypt", (req, res) => {
   res.set("Allow", "POST,OPTIONS");
   res.sendStatus(204);
 });
 
-// ====== Encrypt endpoint ======
-// Accepts multipart/form-data with field 'file' or 'code'
-app.post(
-  "/encrypt",
-  upload.single("file"),
-  express.urlencoded({ extended: false }),
-  express.json(),
-  async (req, res) => {
-    try {
-      // Determine source code
-      let originalCode = null;
-      let incomingFileName = null;
+// --- Main /encrypt endpoint
+app.post("/encrypt", upload.single("file"), async (req, res) => {
+  try {
+    let originalCode = null;
+    let incomingFileName = null;
 
-      if (req.file && req.file.buffer) {
-        incomingFileName = req.file.originalname || "uploaded.js";
-        if (!incomingFileName.toLowerCase().endsWith(".js")) incomingFileName += ".js";
-        originalCode = req.file.buffer.toString("utf8");
-      } else if (req.body && req.body.code) {
-        originalCode = String(req.body.code);
-        incomingFileName = (req.body.filename && String(req.body.filename).trim()) || "uploaded.js";
-        if (!incomingFileName.toLowerCase().endsWith(".js")) incomingFileName += ".js";
-      } else {
-        return res.status(400).json({ error: "No file or code provided. Send multipart/form-data with field 'file' or 'code'." });
-      }
-
-      // Read options
-      const preset = req.body && req.body.preset ? String(req.body.preset) : "ultra";
-      const outFilenameRaw = req.body && req.body.filename ? String(req.body.filename).trim() : null;
-      const outFilename = outFilenameRaw ? (outFilenameRaw.toLowerCase().endsWith(".js") ? outFilenameRaw : outFilenameRaw + ".js") : `Encrypted-${incomingFileName}`;
-      const password = req.body && req.body.password ? String(req.body.password) : null;
-      const includeAntiBypass = parseBool(req.body && req.body.includeAntiBypass);
-
-      // Obfuscate if module available
-      let resultCode = originalCode;
-      if (obfuscator) {
-        try {
-          resultCode = await obfuscator.obfuscateCode(originalCode, preset, { includeAntiBypass, password });
-        } catch (err) {
-          console.error("[server] Obfuscation failed:", err);
-          return res.status(500).json({ error: "Obfuscation failed: " + (err.message || "unknown") });
-        }
-      } else {
-        // warn client that obfuscator missing
-        res.set("X-Seren-Warning", "obfuscator-missing");
-        console.warn("[server] obfuscator missing — returning original code unmodified.");
-      }
-
-      // Write to temporary file and send as download (so browsers save proper filename)
-      const tmpName = `Encrypted_${Date.now()}.js`;
-      const tmpPath = path.join(__dirname, tmpName);
-      await fs.writeFile(tmpPath, resultCode, "utf8");
-
-      // set headers and send file
-      res.download(tmpPath, outFilename, async (err) => {
-        // cleanup
-        try {
-          await fs.unlink(tmpPath);
-        } catch (e) {
-          // ignore cleanup error
-        }
-        if (err) {
-          console.error("[server] Error sending file:", err);
-        }
-      });
-    } catch (err) {
-      console.error("[server] Unexpected error in /encrypt:", err);
-      res.status(500).json({ error: (err && err.message) ? err.message : "Internal server error" });
+    if (req.file && req.file.buffer) {
+      incomingFileName = req.file.originalname || "uploaded.js";
+      if (!incomingFileName.toLowerCase().endsWith(".js")) incomingFileName += ".js";
+      originalCode = req.file.buffer.toString("utf8");
+    } else if (req.body.code) {
+      incomingFileName = req.body.filename || "uploaded.js";
+      if (!incomingFileName.toLowerCase().endsWith(".js")) incomingFileName += ".js";
+      originalCode = String(req.body.code);
+    } else {
+      return res.status(400).json({ error: "No file or code provided" });
     }
-  }
-);
 
-// ====== Serve static frontend from /public (if exists) ======
+    const preset = String(req.body.preset || "ultra");
+    const outFilename = (req.body.filename && req.body.filename.trim()) || `Encrypted-${incomingFileName}`;
+    const password = req.body.password || null;
+    const includeAntiBypass = parseBool(req.body.includeAntiBypass);
+
+    // Run obfuscator or passthrough
+    let resultCode = originalCode;
+    let warning = null;
+
+    if (obfuscator) {
+      try {
+        resultCode = await obfuscator.obfuscateCode(originalCode, preset, {
+          includeAntiBypass,
+          password,
+        });
+      } catch (err) {
+        console.error(chalk.red("[error] Obfuscation failed:"), err);
+        return res.status(500).json({ error: "Obfuscation failed", detail: err.message });
+      }
+    } else {
+      warning = "Obfuscator module missing. Returning original code.";
+      console.warn(chalk.yellow("[warn] " + warning));
+    }
+
+    const tmpName = `Encrypted_${Date.now()}.js`;
+    const tmpPath = path.join(__dirname, tmpName);
+    await fs.writeFile(tmpPath, resultCode, "utf8");
+
+    res.download(tmpPath, outFilename.endsWith(".js") ? outFilename : `${outFilename}.js`, async (err) => {
+      await fs.remove(tmpPath).catch(() => {});
+      if (err) console.error(chalk.red("[error] Error sending file:"), err);
+    });
+
+    if (warning) res.set("X-Seren-Warning", warning);
+  } catch (err) {
+    console.error(chalk.red("[fatal] Unexpected error in /encrypt:"), err);
+    res.status(500).json({ error: "Internal Server Error", detail: err.message });
+  }
+});
+
+// ====== Static frontend ======
 const publicPath = path.join(__dirname, "public");
 if (fs.existsSync(publicPath)) {
   app.use(express.static(publicPath));
-  // SPA fallback: return index.html for unknown routes
-  app.get("*", (req, res) => {
-    res.sendFile(path.join(publicPath, "index.html"));
-  });
-  console.log("[server] Serving static frontend from ./public");
+  app.get("*", (req, res) => res.sendFile(path.join(publicPath, "index.html")));
+  console.log(chalk.cyan("[info] Serving frontend from ./public"));
 } else {
-  console.warn("[server] Folder ./public not found — frontend will not be served.");
+  console.warn(chalk.yellow("[warn] No frontend folder found (./public)"));
 }
 
 // ====== Error handler ======
 app.use((err, req, res, next) => {
-  console.error("[server] Uncaught error:", err);
-  if (!res.headersSent) {
-    res.status(500).json({ error: "Server error", detail: err && err.message });
-  } else {
-    next(err);
-  }
+  console.error(chalk.red("[uncaught]"), err);
+  if (!res.headersSent) res.status(500).json({ error: "Server error", detail: err.message });
+  else next(err);
 });
 
-// ====== Start ======
+// ====== Start server ======
 app.listen(PORT, () => {
-  console.log(`✅ Seren Encryptor server running on port ${PORT}`);
-  console.log(` - Max upload: ${MAX_FILE_MB} MB`);
-  console.log(` - Health: GET /health`);
-  console.log(` - Encrypt: POST /encrypt (multipart/form-data: file, preset, filename, password, includeAntiBypass)`);
+  console.log(chalk.green(`✅ Seren Encryptor backend running on port ${PORT}`));
+  console.log(chalk.gray(`   Max upload: ${MAX_FILE_MB} MB`));
+  console.log(chalk.gray(`   Health: GET /health`));
+  console.log(chalk.gray(`   Encrypt: POST /encrypt`));
 });
