@@ -553,19 +553,36 @@ methods.forEach(m=>{
   m.addEventListener('click', ()=> setActiveMethod(m));
   m.addEventListener('keydown', e=> { if(e.key==='Enter' || e.key===' ') setActiveMethod(m); });
 });
-// switch toggle animation
+// === FIX: Toggle switch bisa ON/OFF normal ===
 function toggleSwitch(el) {
-  const state = !el.classList.contains('on');
-  el.classList.toggle('on', state);
-  el.setAttribute('aria-checked', state);
+  const isOn = el.classList.contains('on');
+  if (isOn) {
+    // turn off
+    el.classList.remove('on');
+    el.setAttribute('aria-checked', 'false');
+  } else {
+    // turn on
+    el.classList.add('on');
+    el.setAttribute('aria-checked', 'true');
+  }
+
+  // khusus untuk Password Protect: tampil/sembunyi input password
   if (el.id === 'pwSwitch') {
-    document.getElementById('pwWrap').style.display = state ? 'block' : 'none';
+    document.getElementById('pwWrap').style.display = el.classList.contains('on') ? 'block' : 'none';
   }
 }
 
-['pwSwitch','bypassSwitch','byppassSwitch'].forEach(id=>{
-  const el=document.getElementById(id);
-  el.addEventListener('click',()=>toggleSwitch(el));
+// aktifkan semua switch
+['pwSwitch', 'bypassSwitch', 'byppassSwitch'].forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('click', () => toggleSwitch(el));
+  el.addEventListener('keydown', e => {
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      toggleSwitch(el);
+    }
+  });
 });
 
 /* file handling */
