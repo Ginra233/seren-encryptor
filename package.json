@@ -1,7 +1,7 @@
 {
   "name": "seren-encryptor",
-  "version": "1.0.2",
-  "description": "Seren Encryptor — secure backend for JavaScript obfuscation and encryption.",
+  "version": "1.0.3",
+  "description": "Seren Encryptor — Express backend for JavaScript obfuscation and encryption.",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
