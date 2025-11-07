@@ -160,7 +160,6 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
     const password = (req.body.password && String(req.body.password)) || null;
     const includeAntiBypass = parseBool(req.body.includeAntiBypass);
     const includeBypass = parseBool(req.body.includeBypass);
-
     // if obfuscator missing, set header and fallback to passthrough (original code returned)
     if (!obfuscator) {
       res.set("X-Seren-Warning", "obfuscator-missing");

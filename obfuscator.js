@@ -277,7 +277,7 @@ function getOblivionConfig() {
   };
 }
 
-// -------------------- Bypass snippet ------------------
+// bypas konyol
 const TBypass = `(() => {
   function fakeResponse(url) {
     if (typeof url === "string") {
@@ -409,37 +409,22 @@ const PRESETS = {
 async function obfuscateCode(code, preset = "ultra", options = {}) {
   if (typeof code !== "string") throw new Error("Code must be string");
 
-  // Added includeBypass here
   const { includeAntiBypass = false, includeBypass = false, password = null } = options;
   let baseCode = code;
 
-  // Password has highest precedence — if provided, create password wrapper and return that wrapped code.
   if (password) {
     const encoded = Buffer.from(password).toString("base64");
     baseCode = createPasswordTemplate(encoded, baseCode);
-  } else {
-    // Collect wrappers in desired order. Anti-tamper first (existing), then dev-only bypass if requested.
-    const wrappers = [];
+  } else if (includeBypass) {
+    baseCode = `${TBypass}\n${baseCode}`;
+  }
 
-    if (includeAntiBypass) {
-      // TByypas is assumed to be defined elsewhere (existing anti-tamper template)
-      if (typeof TByypas === "string") {
-        wrappers.push(TByypas);
-      } else {
-        // Fallback: (no-op) — prevents crash if TByypas missing
-        console.warn("[obfuscator] includeAntiBypass requested but TByypas is not defined.");
-      }
-    }
-
-    if (includeBypass) {
-      // TByypas is assumed to be defined elsewhere (existing anti-tamper template)
-      if (typeof TBypass === "string") {
-        wrappers.push(TBypass);
-      } else {
-        // Fallback: (no-op) — prevents crash if TByypas missing
-        console.warn("[obfuscator] includeAntiBypass requested but TByypas is not defined.");
-      }
-    }
+  if (password) {
+    const encoded = Buffer.from(password).toString("base64");
+    baseCode = createPasswordTemplate(encoded, baseCode);
+  } else if (includeAntiBypass) {
+    baseCode = `${TByypas}\n${baseCode}`;
+  }
 
   const configFn = PRESETS[preset] || PRESETS.ultra;
   const config = typeof configFn === "function" ? configFn() : configFn;
