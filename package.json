@@ -1,42 +1,28 @@
 {
   "name": "seren-encryptor",
-  "version": "1.0.0",
-  "description": "Seren Encryptor — Web-based JS Obfuscator & Secure Code Protector",
+  "version": "1.0.1",
+  "description": "Seren Encryptor — secure backend for JavaScript obfuscation and encryption.",
   "main": "server.js",
+  "type": "commonjs",
   "scripts": {
-    "start": "NODE_ENV=production node server.js",
-    "dev": "NODE_ENV=development nodemon server.js",
-    "lint": "eslint . --ext .js"
+    "start": "node server.js",
+    "dev": "NODE_ENV=development nodemon server.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=18.0.0"
   },
   "dependencies": {
-    "chalk": "^5.3.0",
+    "chalk": "^4.1.2",
     "compression": "^1.7.4",
-    "express": "^4.21.0",
-    "fs-extra": "^11.3.0",
-    "helmet": "^7.0.2",
-    "js-confuser": "^2.0.0",
-    "multer": "1.4.5-lts.1"
+    "express": "^4.18.2",
+    "fs-extra": "^11.2.0",
+    "helmet": "^7.1.0",
+    "js-confuser": "2.0.0",
+    "multer": "1.4.5-lts.1",
+    "path": "^0.12.7"
   },
   "devDependencies": {
-    "eslint": "^9.9.0",
     "nodemon": "^3.1.0"
   },
-  "keywords": [
-    "javascript",
-    "encryptor",
-    "obfuscator",
-    "js-confuser",
-    "nodejs",
-    "security",
-    "seren"
-  ],
-  "license": "MIT",
-  "author": "Seren Team",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Ginra233/seren-encryptor"
-  }
+  "license": "MIT"
 }
