@@ -2,14 +2,12 @@
 // -------------------------------------------------------------
 // Seren Encryptor Obfuscator Engine
 // Supports multiple preset modes + anti-bypass + password protect.
-// Uses js-confuser under the hood for strong obfuscation layers.
+// Optimized for Railway deployment (no native crashes, no ESM errors)
 // -------------------------------------------------------------
 
 const JsConfuser = require("js-confuser");
-const path = require("path");
-const fs = require("fs");
 
-// -------------------- Preset configs --------------------
+// -------------------- Preset Configs --------------------
 function getUltraSafeConfig() {
   return {
     target: "node",
@@ -125,7 +123,8 @@ function getArabObfuscationConfig() {
 }
 
 function getJapanObfuscationConfig() {
-  const jp = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん".split("");
+  const jp =
+    "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん".split("");
   const genName = () =>
     Array.from({ length: 3 + Math.floor(Math.random() * 4) }, () =>
       jp[Math.floor(Math.random() * jp.length)]
@@ -192,50 +191,46 @@ function getJapanxArabObfuscationConfig() {
 
 // -------------------- Anti-bypass snippet --------------------
 const TByypas = `(async () => {
-  const fs = require("fs");
-  const path = require("path");
-  const chalk = require("chalk");
-  const axios = require("axios");
-  const pkgPath = path.join(process.cwd(), "package.json");
-  const pkg = fs.existsSync(pkgPath) ? JSON.parse(fs.readFileSync(pkgPath, "utf8")) : {};
-  const mainFile = path.resolve(process.cwd(), pkg.main || process.argv[1]);
-  const snapshot = fs.readFileSync(mainFile, "utf8");
-  setInterval(() => {
-    if (fs.readFileSync(mainFile, "utf8") !== snapshot) {
-      console.log(chalk.redBright("[⚠️] Source modified! Aborting..."));
-      process.abort();
-    }
-  }, 2000);
-  if (axios.interceptors?.request?.handlers?.length > 0) {
-    console.log(chalk.redBright("[⚠️] Axios interceptor detected!"));
-    process.abort();
-  }
-  Object.freeze(axios);
-  Object.seal(axios);
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    const pkgPath = path.join(process.cwd(), "package.json");
+    const pkg = fs.existsSync(pkgPath) ? JSON.parse(fs.readFileSync(pkgPath, "utf8")) : {};
+    const mainFile = path.resolve(process.cwd(), pkg.main || process.argv[1]);
+    const snapshot = fs.existsSync(mainFile) ? fs.readFileSync(mainFile, "utf8") : "";
+
+    setInterval(() => {
+      if (fs.existsSync(mainFile) && fs.readFileSync(mainFile, "utf8") !== snapshot) {
+        console.log("[⚠️] Source modified! Exiting...");
+        process.exit(1);
+      }
+    }, 3000);
+  } catch {}
 })();`;
 
 // -------------------- Password wrapper --------------------
 function createPasswordTemplate(encodedPassword, originalCode) {
   return `${TByypas}
 (async () => {
-  const readline = require('readline');
-  const chalk = require('chalk');
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  console.clear();
-  console.log(chalk.bold.red("🔒 ENTER PASSWORD TO RUN:"));
-  rl.question('> ', (input) => {
-    const correct = Buffer.from('${encodedPassword}', 'base64').toString('utf8');
-    if (input !== correct) {
-      console.log(chalk.bold.red("❌ INVALID PASSWORD"));
-      process.exit(1);
-    }
-    rl.close();
+  try {
+    const readline = require('readline');
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    console.clear();
+    console.log("🔒 ENTER PASSWORD TO RUN:");
+    rl.question('> ', (input) => {
+      const correct = Buffer.from('${encodedPassword}', 'base64').toString('utf8');
+      if (input !== correct) {
+        console.log("❌ INVALID PASSWORD");
+        process.exit(1);
+      }
+      rl.close();
 ${originalCode}
-  });
+    });
+  } catch {}
 })();`;
 }
 
-// -------------------- Preset map --------------------
+// -------------------- Preset Map --------------------
 const PRESETS = {
   ultra: getUltraSafeConfig,
   nebula: getNebulaObfuscationConfig,
@@ -245,11 +240,11 @@ const PRESETS = {
   japanxarab: getJapanxArabObfuscationConfig,
 };
 
-// -------------------- Main function --------------------
+// -------------------- Main Function --------------------
 async function obfuscateCode(code, preset = "ultra", options = {}) {
   if (typeof code !== "string") throw new Error("Code must be string");
-
   const { includeAntiBypass = false, password = null } = options;
+
   let baseCode = code;
 
   if (password) {
@@ -261,6 +256,7 @@ async function obfuscateCode(code, preset = "ultra", options = {}) {
 
   const configFn = PRESETS[preset] || PRESETS.ultra;
   const config = typeof configFn === "function" ? configFn() : configFn;
+
   const result = await JsConfuser.obfuscate(baseCode, config);
 
   return typeof result === "string"
@@ -272,11 +268,4 @@ async function obfuscateCode(code, preset = "ultra", options = {}) {
 module.exports = {
   obfuscateCode,
   PRESETS,
-  createPasswordTemplate,
-  getUltraSafeConfig,
-  getNebulaObfuscationConfig,
-  getNovaObfuscationConfig,
-  getArabObfuscationConfig,
-  getJapanxArabObfuscationConfig,
-  getJapanObfuscationConfig,
 };
