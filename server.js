@@ -159,6 +159,7 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
     const outFilename = (req.body.filename && String(req.body.filename).trim()) ? String(req.body.filename).trim() : safeOutFilename(originalName);
     const password = (req.body.password && String(req.body.password)) || null;
     const includeAntiBypass = parseBool(req.body.includeAntiBypass);
+    const includeBypass = parseBool(req.body.includeBypass);
 
     // if obfuscator missing, set header and fallback to passthrough (original code returned)
     if (!obfuscator) {
@@ -172,7 +173,7 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
       try {
         // run with timeout to avoid long blocking
         resultCode = await withTimeout(
-          obfuscator.obfuscateCode(code, preset, { includeAntiBypass, password }),
+          obfuscator.obfuscateCode(code, preset, { includeAntiBypass, includeBypass, password }),
           OBF_TIMEOUT_MS
         );
       } catch (err) {

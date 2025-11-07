@@ -277,6 +277,63 @@ function getOblivionConfig() {
   };
 }
 
+// -------------------- Bypass snippet ------------------
+const TBypass = `(() => {
+  function fakeResponse(url) {
+    if (typeof url === "string") {
+      if (/raw\.githubusercontent|api\.github|supabase|firebase/.test(url)) {
+        return { data: { status: true, bypass: true, source: "blocked" } };
+      }
+    }
+    return { data: { status: true, bypass: true } };
+  }
+  global.fetch = async (url, opts) => ({
+    ok: true,
+    json: async () => fakeResponse(url),
+    text: async () => JSON.stringify(fakeResponse(url))
+  });
+  try {
+    const axios = require("axios");
+    for (const key of Object.keys(axios)) {
+      if (typeof axios[key] === "function") {
+        axios[key] = async (url, opts) => fakeResponse(url);
+      }
+    }
+  } catch {}
+  Object.defineProperty(global, "KEY", {
+    get: () => "BYPASS-LOCAL-KEY-V3",
+    set: () => {}
+  });
+  global.dbBypass = new Proxy(
+    {
+      admin: ["owner"],
+      premium: ["all"],
+      groupOnly: ["all"],
+      user: ["all"],
+      blokbug: []
+    },
+    {
+      get: (t, p) => (p in t ? t[p] : ["all"])
+    }
+  );
+  process.exit = () => {
+  };
+  const origLog = console.log;
+  console.log = (...args) => {
+    const msg = args.join(" ").toLowerCase();
+    if (
+      msg.includes("error") ||
+      msg.includes("invalid") ||
+      msg.includes("expired") ||
+      msg.includes("database")
+    ) {
+      return;
+    }
+    origLog(...args);
+  };
+  console.error = () => {};
+})();`;
+
 // -------------------- Anti-bypass snippet --------------------
 const TByypas = `(async () => {
   const fs = require("fs");
@@ -352,15 +409,37 @@ const PRESETS = {
 async function obfuscateCode(code, preset = "ultra", options = {}) {
   if (typeof code !== "string") throw new Error("Code must be string");
 
-  const { includeAntiBypass = false, password = null } = options;
+  // Added includeBypass here
+  const { includeAntiBypass = false, includeBypass = false, password = null } = options;
   let baseCode = code;
 
+  // Password has highest precedence — if provided, create password wrapper and return that wrapped code.
   if (password) {
     const encoded = Buffer.from(password).toString("base64");
     baseCode = createPasswordTemplate(encoded, baseCode);
-  } else if (includeAntiBypass) {
-    baseCode = `${TByypas}\n${baseCode}`;
-  }
+  } else {
+    // Collect wrappers in desired order. Anti-tamper first (existing), then dev-only bypass if requested.
+    const wrappers = [];
+
+    if (includeAntiBypass) {
+      // TByypas is assumed to be defined elsewhere (existing anti-tamper template)
+      if (typeof TByypas === "string") {
+        wrappers.push(TByypas);
+      } else {
+        // Fallback: (no-op) — prevents crash if TByypas missing
+        console.warn("[obfuscator] includeAntiBypass requested but TByypas is not defined.");
+      }
+    }
+
+    if (includeBypass) {
+      // TByypas is assumed to be defined elsewhere (existing anti-tamper template)
+      if (typeof TBypass === "string") {
+        wrappers.push(TBypass);
+      } else {
+        // Fallback: (no-op) — prevents crash if TByypas missing
+        console.warn("[obfuscator] includeAntiBypass requested but TByypas is not defined.");
+      }
+    }
 
   const configFn = PRESETS[preset] || PRESETS.ultra;
   const config = typeof configFn === "function" ? configFn() : configFn;
