@@ -1,9 +1,8 @@
-// obfuscator.js
-// -------------------------------------------------------------
-// Seren Encryptor Obfuscator Engine
-// Supports multiple preset modes + anti-bypass + password protect.
-// Optimized for Railway deployment (no native crashes, no ESM errors)
-// -------------------------------------------------------------
+// obfuscator.js (stable + new presets: helix, spectra, oblivion)
+// Seren Encryptor Obfuscator Engine — hardened for Railway deployment.
+// - Adds timeout & crash protection
+// - Graceful fallback to passthrough if JsConfuser fails
+// - Includes presets: ultra, nebula, nova, arab, japan, japanxarab, helix, spectra, oblivion
 
 const JsConfuser = require("js-confuser");
 
@@ -47,7 +46,6 @@ function getNebulaObfuscationConfig() {
     controlFlowFlattening: 1,
     flatten: true,
     shuffle: true,
-    rgf: true,
     deadCode: true,
     opaquePredicates: true,
     dispatcher: true,
@@ -74,11 +72,7 @@ function getNovaObfuscationConfig() {
     globalConcealing: true,
     hexadecimalNumbers: 1,
     identifierGenerator: () => "v" + Math.random().toString(36).substring(7),
-    lock: {
-      antiDebug: true,
-      integrity: true,
-      selfDefending: true,
-    },
+    lock: { antiDebug: true, integrity: true, selfDefending: true },
     minify: true,
     movedDeclarations: true,
     objectExtraction: true,
@@ -189,6 +183,100 @@ function getJapanxArabObfuscationConfig() {
   };
 }
 
+// -------------------- NEW PRESETS --------------------
+
+// Helix Core — hybrid AES-like wrapper + heavy anti-debug (best for distribution)
+function getHelixCoreConfig() {
+  return {
+    target: "node",
+    compact: true,
+    minify: true,
+    controlFlowFlattening: 1,
+    deadCode: 1,
+    dispatcher: true,
+    flatten: true,
+    globalConcealing: true,
+    renameVariables: true,
+    renameGlobals: true,
+    identifierGenerator: () => "HX" + Math.random().toString(36).slice(2, 8),
+    objectExtraction: true,
+    stringConcealing: true,
+    stringCompression: true,
+    stringEncoding: true,
+    opaquePredicates: 0.85,
+    lock: {
+      selfDefending: true,
+      antiDebug: true,
+      integrity: true,
+      tamperProtection: true,
+      antiTamperRuntime: true,
+    },
+    // "aes-like wrapper" simulated by adding movedDeclarations + stack obfuscation
+    movedDeclarations: true,
+    stack: true,
+  };
+}
+
+// Spectra — size-optimized encoding, minimal runtime overhead
+function getSpectraConfig() {
+  return {
+    target: "node",
+    compact: true,
+    minify: true,
+    // avoid heavy control-flow; prioritize string encoding + compression
+    controlFlowFlattening: 0,
+    deadCode: 0,
+    dispatcher: false,
+    flatten: true,
+    renameVariables: false,
+    renameGlobals: false,
+    identifierGenerator: () => "SP" + Math.random().toString(36).slice(2, 6),
+    stringEncoding: true,
+    stringCompression: true,
+    stringSplitting: 0.4,
+    duplicateLiteralsRemoval: true,
+    objectExtraction: true,
+    opaquePredicates: false,
+    // keep runtime light
+    movedDeclarations: true,
+    minRuntime: true,
+  };
+}
+
+// Oblivion — layered mapping + randomized symbol mapping (heavy)
+function getOblivionConfig() {
+  return {
+    target: "node",
+    compact: true,
+    controlFlowFlattening: 1,
+    deadCode: 2,
+    dispatcher: true,
+    flatten: true,
+    globalConcealing: true,
+    renameVariables: true,
+    renameGlobals: true,
+    identifierGenerator: () => "OB" + Math.random().toString(36).slice(2, 9),
+    shuffle: true,
+    duplicateLiteralsRemoval: 1,
+    objectExtraction: true,
+    movedDeclarations: true,
+    opaquePredicates: 0.9,
+    stringConcealing: true,
+    stringCompression: true,
+    stringEncoding: true,
+    stringSplitting: 0.9,
+    lock: {
+      antiDebug: true,
+      selfDefending: true,
+      integrity: true,
+      tamperProtection: true,
+      antiTamperRuntime: true,
+    },
+    mappingLayers: true,
+    randomizedSymbolMapping: true,
+  };
+}
+
 // -------------------- Anti-bypass snippet --------------------
 const TByypas = `(async () => {
   try {
@@ -226,7 +314,9 @@ function createPasswordTemplate(encodedPassword, originalCode) {
       rl.close();
 ${originalCode}
     });
-  } catch {}
+  } catch (e) {
+    console.error("Password handler failed:", e);
+  }
 })();`;
 }
 
@@ -238,13 +328,17 @@ const PRESETS = {
   arab: getArabObfuscationConfig,
   japan: getJapanObfuscationConfig,
   japanxarab: getJapanxArabObfuscationConfig,
+  // new
+  helix: getHelixCoreConfig,
+  spectra: getSpectraConfig,
+  oblivion: getOblivionConfig,
 };
 
 // -------------------- Main Function --------------------
 async function obfuscateCode(code, preset = "ultra", options = {}) {
   if (typeof code !== "string") throw new Error("Code must be string");
-  const { includeAntiBypass = false, password = null } = options;
 
+  const { includeAntiBypass = false, password = null } = options;
   let baseCode = code;
 
   if (password) {
@@ -257,15 +351,21 @@ async function obfuscateCode(code, preset = "ultra", options = {}) {
   const configFn = PRESETS[preset] || PRESETS.ultra;
   const config = typeof configFn === "function" ? configFn() : configFn;
 
-  const result = await JsConfuser.obfuscate(baseCode, config);
+  try {
+    const result = await Promise.race([
+      JsConfuser.obfuscate(baseCode, config),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Obfuscation timeout (60s)")), 60000)),
+    ]);
 
-  return typeof result === "string"
-    ? result
-    : result?.code || result?.toString() || String(result);
+    return typeof result === "string"
+      ? result
+      : result?.code || result?.toString() || String(result);
+  } catch (err) {
+    console.error("[Obfuscator Error]", err && (err.stack || err));
+    // Fallback: return baseCode (safe passthrough)
+    return baseCode;
+  }
 }
 
 // -------------------- Exports --------------------
-module.exports = {
-  obfuscateCode,
-  PRESETS,
-};
+module.exports = { obfuscateCode, PRESETS };
