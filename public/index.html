@@ -164,6 +164,29 @@
   50% { box-shadow: 0 0 16px rgba(52,211,153,0.9); }
 }
 
+/* Success notice */
+#encNotice {
+  background: linear-gradient(180deg, rgba(34,197,94,0.06), rgba(34,197,94,0.02));
+  border: 1px solid rgba(34,197,94,0.10);
+  color: var(--text);
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  box-shadow: 0 10px 30px rgba(16,185,129,0.04);
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+#encNotice .left {flex:1;min-width:0}
+#encNotice .title {font-weight:800;color:var(--accent-3);margin-bottom:6px}
+#encNotice .commands {background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;font-family:monospace;font-size:13px;display:flex;gap:8px;align-items:center}
+#encNotice button.copyBtn {
+  background:transparent;border:1px solid rgba(255,255,255,0.06);padding:6px 10px;border-radius:8px;color:var(--text);cursor:pointer;font-weight:700;
+}
+#encNotice .right {display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+#encNotice .closeBtn {background:transparent;border:none;color:var(--muted);cursor:pointer;font-weight:700}
+
 .obf-online {
   background: var(--accent-3) !important;
   animation: pulseOnline 1.8s infinite;
@@ -362,6 +385,8 @@
             </button>
 
             <div class="progress-wrap" aria-hidden>
+            <!-- Encryption success notice (hidden by default) -->
+<div id="encNotice" style="display:none;margin-top:14px"></div>
               <div class="progress-bar"><i id="progress" style="width:0%"></i></div>
               <div id="statusText" style="color:var(--muted);font-size:13px">Menunggu file...</div>
             </div>
@@ -594,7 +619,9 @@ encryptBtn.addEventListener('click', async ()=>{
     a.href = URL.createObjectURL(blob);
     a.download = ('enc-' + chosenFile.name) || 'Encrypted.js';
     document.body.appendChild(a); a.click(); a.remove();
+    const downloadedName = a.download || ('enc-' + (chosenFile && chosenFile.name ? chosenFile.name : 'file.js'));
     statusText.textContent = '✅ Selesai! File diunduh.';
+    try { showEncNotice(downloadedName); } catch(e){ console.warn('showEncNotice failed', e); }
   }catch(err){
     console.error(err);
     statusText.textContent = '❌ Gagal: ' + (err.message || 'server error');
@@ -602,6 +629,56 @@ encryptBtn.addEventListener('click', async ()=>{
     setTimeout(()=> progressEl.style.width = '0%', 1200);
     checkReady();
   }
+// --- show encryption success notice + copy button ---
+function showEncNotice(filename) {
+  const encNotice = document.getElementById('encNotice');
+  if (!encNotice) return;
+
+  const installCmd = 'npm install readline axios chalk@4 path';
+  const html = `
+    <div class="left">
+      <div class="title">✅ Berhasil mengenkripsi file!</div>
+      <div style="color:var(--muted);font-size:13px;margin-bottom:8px">
+        💡 Salin file hasil enkripsi (<strong style="color:var(--text)">${filename}</strong>) lalu pasang di project kamu.
+        Sebelum menjalankan, pastikan paket ini terpasang:
+      </div>
+      <div class="commands">
+        <div style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${installCmd}</div>
+        <button class="copyBtn" id="copyCmdBtn">Salin</button>
+      </div>
+    </div>
+    <div class="right">
+      <button class="closeBtn" id="closeEncNotice">Tutup</button>
+    </div>
+  `;
+  encNotice.innerHTML = html;
+  encNotice.style.display = 'flex';
+
+  // copy button
+  const copyBtn = document.getElementById('copyCmdBtn');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(installCmd);
+        copyBtn.textContent = 'Tersalin ✓';
+        setTimeout(()=> copyBtn.textContent = 'Salin', 2000);
+      } catch (e) {
+        // fallback
+        const ta = document.createElement('textarea');
+        ta.value = installCmd;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); copyBtn.textContent = 'Tersalin ✓'; } catch (err) { copyBtn.textContent = 'Copy gagal'; }
+        ta.remove();
+        setTimeout(()=> copyBtn.textContent = 'Salin', 2000);
+      }
+    }, { once: true });
+  }
+
+  // close button
+  const closeBtn = document.getElementById('closeEncNotice');
+  if (closeBtn) closeBtn.addEventListener('click', ()=> { encNotice.style.display='none'; }, { once: true });
+}  
 });
 
 /* prevent default drag/drop outside */
@@ -609,4 +686,4 @@ window.addEventListener('dragover', e=> e.preventDefault());
 window.addEventListener('drop', e=> e.preventDefault());
 </script>
 </body>
-</html>
+            </html>
