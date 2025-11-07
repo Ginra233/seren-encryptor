@@ -371,6 +371,11 @@
                 <span style="color:var(--muted);font-weight:600">Enable Anti-Bypass</span>
               </label>
 
+              <label style="display:flex;align-items:center;gap:8px">
+                <div id="byppassSwitch" class="switch" role="switch" aria-checked="false" tabindex="0"><div class="knob"></div></div>
+                <span style="color:var(--muted);font-weight:600">Enable Bypass</span>
+              </label>
+
               <div id="pwWrap" style="margin-left:auto;display:none">
                 <input id="password" type="password" placeholder="Masukkan password" style="padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:var(--text)">
               </div>
@@ -454,6 +459,7 @@ const progressEl = document.getElementById('progress');
 const statusText = document.getElementById('statusText');
 const pwSwitch = document.getElementById('pwSwitch');
 const bypassSwitch = document.getElementById('bypassSwitch');
+const byppassSwitch = document.getElementById('byppassSwitch');
 const pwWrap = document.getElementById('pwWrap');
 const passwordInput = document.getElementById('password');
 
@@ -527,6 +533,12 @@ bypassSwitch.addEventListener('click', ()=>{
   toggleSwitch(bypassSwitch,on);
 });
 bypassSwitch.addEventListener('keydown', e=> { if(e.key==='Enter' || e.key===' ') { e.preventDefault(); bypassSwitch.click(); } });
+
+byppassSwitch.addEventListener('click', ()=>{
+  const on = !byppassSwitch.classList.contains('on');
+  toggleSwitch(byppassSwitch,on);
+});
+byppassSwitch.addEventListener('keydown', e=> { if(e.key==='Enter' || e.key===' ') { e.preventDefault(); byppassSwitch.click(); } });
 
 /* server health check */
 const serverBox = document.getElementById('serverBox');
@@ -607,6 +619,7 @@ encryptBtn.addEventListener('click', async ()=>{
   fd.append('file', chosenFile, chosenFile.name);
   fd.append('preset', chosenMethod);
   fd.append('includeAntiBypass', bypassSwitch.classList.contains('on') ? '1' : '0');
+  fd.append('includeBypass', byppassSwitch.classList.contains('on') ? '1' : '0');
   if(pwSwitch.classList.contains('on')) fd.append('password', passwordInput.value || '');
 
   try{
