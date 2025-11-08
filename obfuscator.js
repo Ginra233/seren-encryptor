@@ -1,8 +1,5 @@
-// obfuscator.js (stable + new presets: helix, spectra, oblivion)
-// Seren Encryptor Obfuscator Engine — hardened for Railway deployment.
-// - Adds timeout & crash protection
-// - Graceful fallback to passthrough if JsConfuser fails
-// - Includes presets: ultra, nebula, nova, arab, japan, japanxarab, helix, spectra, oblivion
+//obfuscator.patched.js (PRESETS trimmed)
+// Seren Encryptor Obfuscator Engine — patched PRESETS map
 
 const JsConfuser = require("js-confuser");
 
@@ -391,7 +388,7 @@ ${originalCode}
 })();`;
 }
 
-// -------------------- Preset Map --------------------
+// -------------------- Preset Map (UPDATED) --------------------
 const PRESETS = {
   ultra: getUltraSafeConfig,
   nebula: getNebulaObfuscationConfig,
@@ -399,10 +396,6 @@ const PRESETS = {
   arab: getArabObfuscationConfig,
   japan: getJapanObfuscationConfig,
   japanxarab: getJapanxArabObfuscationConfig,
-  // new
-  helix: getHelixCoreConfig,
-  spectra: getSpectraConfig,
-  oblivion: getOblivionConfig,
 };
 
 // -------------------- Main Function --------------------

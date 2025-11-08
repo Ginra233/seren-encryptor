@@ -1,5 +1,5 @@
 // server.js (patched)
-// Seren Encryptor — Express backend (improved error handling, CORS, obfuscation timeout)
+// Seren Encryptor — Express backend (improved error handling, CORS, obfuscation timeout, preset aliasing)
 
 const express = require("express");
 const multer = require("multer");
@@ -55,6 +55,24 @@ const upload = multer({
   storage,
   limits: { fileSize: MAX_FILE_BYTES },
 });
+
+// Helper to map common alias names from the frontend to server-side preset keys.
+// Add aliases here when frontend uses user-friendly names that differ from obfuscator.PRESETS keys.
+const PRESET_ALIAS = {
+  "nova-prime": "nova",
+  "helix-core": "helix",
+  "aether": "spectra",
+  // identity mappings for convenience
+  "ultra": "ultra",
+  "nebula": "nebula",
+  "nova": "nova",
+  "arab": "arab",
+  "japan": "japan",
+  "japanxarab": "japanxarab",
+  "helix": "helix",
+  "spectra": "spectra",
+  "oblivion": "oblivion",
+};
 
 // Helpers
 function parseBool(v) {
@@ -160,7 +178,19 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
     const originalName = req.file.originalname;
     const code = await fs.readFile(uploadedPath, "utf8");
 
-    const preset = (req.body.preset && String(req.body.preset)) || "ultra";
+    // map & validate preset
+    const rawPreset = (req.body.preset && String(req.body.preset).trim()) || "ultra";
+    const mappedPreset = PRESET_ALIAS[rawPreset] || rawPreset;
+    const allowedPresets = obfuscator && obfuscator.PRESETS ? Object.keys(obfuscator.PRESETS) : ["ultra", "nebula", "nova", "arab", "japan", "japanxarab"];
+    const preset = allowedPresets.includes(mappedPreset) ? mappedPreset : "ultra";
+
+    if (mappedPreset !== rawPreset) {
+      console.log(`[info] Mapped frontend preset "${rawPreset}" -> "${mappedPreset}"`);
+    }
+    if (preset !== mappedPreset) {
+      console.warn(`[warn] Requested preset "${mappedPreset}" is not allowed; falling back to "ultra"`);
+    }
+
     const outFilename = (req.body.filename && String(req.body.filename).trim()) ? String(req.body.filename).trim() : safeOutFilename(originalName);
     const password = (req.body.password && String(req.body.password)) || null;
     const includeAntiBypass = parseBool(req.body.includeAntiBypass);
@@ -173,25 +203,23 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
     }
 
     // run obfuscator if present, with timeout
-// run obfuscator if present, with timeout
-let resultCode = code;
-if (obfuscator) {
-  try {
-    // run with timeout to avoid long blocking
-    resultCode = await withTimeout(
-      obfuscator.obfuscateCode(code, preset, { includeAntiBypass, includeBypass, password }),
-      OBF_TIMEOUT_MS
-    );
-  } catch (err) {
-    console.error("[error] obfuscation failed or timed out:", err && err.stack ? err.stack : err);
-    await cleanup([uploadedPath]);
-    uploadedPath = null;
-    if (String(err.message || "").toLowerCase().includes("timeout")) {
-      return res.status(504).json({ error: "Obfuscation timeout", detail: "Obfuscation took too long" });
+    let resultCode = code;
+    if (obfuscator) {
+      try {
+        resultCode = await withTimeout(
+          obfuscator.obfuscateCode(code, preset, { includeAntiBypass, includeBypass, password }),
+          OBF_TIMEOUT_MS
+        );
+      } catch (err) {
+        console.error("[error] obfuscation failed or timed out:", err && err.stack ? err.stack : err);
+        await cleanup([uploadedPath]);
+        uploadedPath = null;
+        if (String(err.message || "").toLowerCase().includes("timeout")) {
+          return res.status(504).json({ error: "Obfuscation timeout", detail: "Obfuscation took too long" });
+        }
+        return res.status(502).json({ error: "Obfuscator error", detail: err && err.message ? err.message : String(err) });
+      }
     }
-    return res.status(502).json({ error: "Obfuscator error", detail: err && err.message ? err.message : String(err) });
-  }
-}
 
     // write output temp file
     const tmpName = `${Date.now()}_${outFilename}`;
@@ -199,7 +227,6 @@ if (obfuscator) {
     await fs.writeFile(tmpPath, resultCode, "utf8");
 
     // Send file as download and cleanup files afterwards
-    // Use try/catch because res.download's callback may throw on streaming issues
     try {
       res.download(tmpPath, outFilename, async (err) => {
         try {
@@ -209,7 +236,6 @@ if (obfuscator) {
         }
         if (err) {
           console.error("[error] Failed to send file:", err && (err.stack || err));
-          // Note: headers may already be sent here; best-effort
         } else {
           console.log(`[ok] Sent ${outFilename} (preset=${preset})`);
         }
@@ -234,9 +260,9 @@ if (obfuscator) {
 app.get("/presets", (req, res) => {
   try {
     const keys = obfuscator && obfuscator.PRESETS ? Object.keys(obfuscator.PRESETS) : ["ultra", "nebula", "nova", "arab", "japan", "japanxarab"];
-    res.json({ presets: keys, default: keys[0] || "ultra" });
+    res.json({ presets: keys, aliases: PRESET_ALIAS, default: keys[0] || "ultra" });
   } catch (e) {
-    res.json({ presets: ["ultra"], default: "ultra" });
+    res.json({ presets: ["ultra"], aliases: PRESET_ALIAS, default: "ultra" });
   }
 });
 
