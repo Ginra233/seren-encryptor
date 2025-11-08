@@ -268,14 +268,14 @@
           <div class="heading"><h3>Obfuscation Methods</h3></div>
           <div class="method-list" id="methodList">
             <!-- Nova Prime -->
-            <div class="method" data-value="nova-prime" tabindex="0">
+            <div class="method" data-value="nova" tabindex="0">
               <div class="method-left">
                 <div class="badge" aria-hidden>
                   <!-- nova icon -->
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.9 4.6L18 8l-4 2.6L12 16l-2-5.4L6 8l4.1-1.4L12 3z" fill="url(#g1)"/><defs><linearGradient id="g1" x1="0" x2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#06b6d4"/></linearGradient></defs></svg>
                 </div>
                 <div class="meta">
-                  <div class="name">Nova Prime</div>
+                  <div class="name">Nova</div>
                   <div class="desc">Advanced control-flow transforms + string encoding</div>
                 </div>
               </div>
@@ -286,7 +286,7 @@
             </div>
 
             <!-- Aether -->
-            <div class="method" data-value="aether" tabindex="0">
+            <div class="method" data-value="helix-core" tabindex="0">
               <div class="method-left">
                 <div class="badge">
                   <!-- swirl -->
@@ -304,14 +304,14 @@
             </div>
 
             <!-- Helix Core -->
-            <div class="method" data-value="helix-core" tabindex="0">
+            <div class="method" data-value="nebula" tabindex="0">
               <div class="method-left">
                 <div class="badge">
                   <!-- shield -->
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2l7 4v6c0 5-4.5 9.5-7 10-2.5-.5-7-5-7-10V6l7-4z" stroke="#06b6d4" stroke-width="1.2" fill="none"/></svg>
                 </div>
                 <div class="meta">
-                  <div class="name">Helix Core</div>
+                  <div class="name">nebula</div>
                   <div class="desc">Hybrid AES wrapper + anti-debug layers (best for distribution)</div>
                 </div>
               </div>
@@ -322,14 +322,14 @@
             </div>
 
             <!-- Spectra -->
-            <div class="method" data-value="spectra" tabindex="0">
+            <div class="method" data-value="ultra" tabindex="0">
               <div class="method-left">
                 <div class="badge">
                   <!-- wave -->
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M2 12c4 0 4-6 8-6s4 6 8 6 4-6 8-6" stroke="#34d399" stroke-width="1.4" stroke-linecap="round" fill="none"/></svg>
                 </div>
                 <div class="meta">
-                  <div class="name">Spectra</div>
+                  <div class="name">ultra</div>
                   <div class="desc">Size-optimized encoding — minimal runtime overhead</div>
                 </div>
               </div>
@@ -340,7 +340,7 @@
             </div>
 
             <!-- Oblivion -->
-            <div class="method" data-value="oblivion" tabindex="0">
+            <div class="method" data-value="japanxarab" tabindex="0">
               <div class="method-left">
                 <div class="badge">
                   <!-- compass -->
@@ -464,8 +464,27 @@ const pwWrap = document.getElementById('pwWrap');
 const passwordInput = document.getElementById('password');
 
 let chosenFile = null;
+// keep data-value names as-is in HTML; frontend will map aliases to valid presets
 let chosenMethod = 'nova-prime';
 let serverOnline = false;
+
+/* --- PRESET ALIAS MAP --- 
+   frontend-friendly names -> obfuscator.PRESETS keys */
+const PRESET_ALIAS = {
+  "nova-prime": "nova",
+  "helix-core": "helix",
+  "aether": "spectra",
+  // identity mappings for direct names
+  "ultra": "ultra",
+  "nebula": "nebula",
+  "nova": "nova",
+  "arab": "arab",
+  "japan": "japan",
+  "japanxarab": "japanxarab",
+  "helix": "helix",
+  "spectra": "spectra",
+  "oblivion": "oblivion",
+};
 
 /* methods */
 const methods = Array.from(document.querySelectorAll('.method'));
@@ -617,7 +636,11 @@ encryptBtn.addEventListener('click', async ()=>{
 
   const fd = new FormData();
   fd.append('file', chosenFile, chosenFile.name);
-  fd.append('preset', chosenMethod);
+
+  // map alias -> preset key expected by server (PRESET_ALIAS defined earlier)
+  const selectedPreset = PRESET_ALIAS[chosenMethod] || chosenMethod;
+  fd.append('preset', selectedPreset);
+
   fd.append('includeAntiBypass', bypassSwitch.classList.contains('on') ? '1' : '0');
   fd.append('includeBypass', byppassSwitch.classList.contains('on') ? '1' : '0');
   if(pwSwitch.classList.contains('on')) fd.append('password', passwordInput.value || '');
