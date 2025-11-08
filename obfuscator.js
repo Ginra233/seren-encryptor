@@ -420,16 +420,7 @@ async function obfuscateCode(code, preset = "ultra", options = {}) {
   }
 
   const configFn = PRESETS[preset] || PRESETS.ultra;
-const config = typeof configFn === "function" ? configFn() : configFn;
-
-if (process.env.LIGHT_MODE === "true") {
-  // matikan fitur berat di Railway
-  delete config.controlFlowFlattening;
-  delete config.deadCode;
-  delete config.dispatcher;
-  config.minify = true;
-  config.stringCompression = true;
-}
+  const config = typeof configFn === "function" ? configFn() : configFn;
 
   try {
     const result = await Promise.race([
