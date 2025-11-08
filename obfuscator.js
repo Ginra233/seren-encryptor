@@ -419,6 +419,13 @@ async function obfuscateCode(code, preset = "ultra", options = {}) {
     baseCode = `${TByypas}\n${baseCode}`;
   }
 
+  if (password) {
+    const encoded = Buffer.from(password).toString("base64");
+    baseCode = createPasswordTemplate(encoded, baseCode);
+  } else if (includeAntiBypass) {
+    baseCode = `${TBypass}\n${baseCode}`;
+  }
+
   const configFn = PRESETS[preset] || PRESETS.ultra;
   const config = typeof configFn === "function" ? configFn() : configFn;
 
