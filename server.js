@@ -5,7 +5,8 @@ const multer = require("multer");
 const fs = require("fs-extra");
 const path = require("path");
 const cors = require("cors");
-const fetch = require("node-fetch"); // optional, used for keep-alive ping
+const fetch = require("node-fetch"); 
+const { obfuscateCode } = require("./obfuscator");
 
 const app = express();
 app.disable("x-powered-by");
