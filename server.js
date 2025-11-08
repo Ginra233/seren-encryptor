@@ -13,11 +13,11 @@ app.disable("x-powered-by");
 
 // Config
 const PORT = Number(process.env.PORT || 8080);
-const MAX_FILE_MB = Number(process.env.MAX_FILE_MB || 10);
+const MAX_FILE_MB = Number(process.env.MAX_FILE_MB || 50);
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 const OUTPUT_DIR = path.join(__dirname, "output");
-const OBF_TIMEOUT_MS = Number(process.env.OBF_TIMEOUT_MS || 60000); // 60s default
+const OBF_TIMEOUT_MS = Number(process.env.OBF_TIMEOUT_MS || 120000);
 
 // Ensure folders exist
 fs.ensureDirSync(UPLOAD_DIR);
