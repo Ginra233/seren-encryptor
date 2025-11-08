@@ -173,26 +173,25 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
     }
 
     // run obfuscator if present, with timeout
-    let resultCode = code;
-    if (obfuscator) {
-      try {
-        // run with timeout to avoid long blocking
-        resultCode = await withTimeout(
-          obfuscator.obfuscateCode(code, preset, { includeAntiBypass, password }),
-          obfuscator.obfuscateCode(code, preset, { includeBypass}),
-          OBF_TIMEOUT_MS
-        );
-      } catch (err) {
-        console.error("[error] obfuscation failed or timed out:", err && err.stack ? err.stack : err);
-        // cleanup uploaded file before responding
-        await cleanup([uploadedPath]);
-        uploadedPath = null;
-        if (String(err.message || "").toLowerCase().includes("timeout")) {
-          return res.status(504).json({ error: "Obfuscation timeout", detail: "Obfuscation took too long" });
-        }
-        return res.status(502).json({ error: "Obfuscator error", detail: err && err.message ? err.message : String(err) });
-      }
+// run obfuscator if present, with timeout
+let resultCode = code;
+if (obfuscator) {
+  try {
+    // run with timeout to avoid long blocking
+    resultCode = await withTimeout(
+      obfuscator.obfuscateCode(code, preset, { includeAntiBypass, includeBypass, password }),
+      OBF_TIMEOUT_MS
+    );
+  } catch (err) {
+    console.error("[error] obfuscation failed or timed out:", err && err.stack ? err.stack : err);
+    await cleanup([uploadedPath]);
+    uploadedPath = null;
+    if (String(err.message || "").toLowerCase().includes("timeout")) {
+      return res.status(504).json({ error: "Obfuscation timeout", detail: "Obfuscation took too long" });
     }
+    return res.status(502).json({ error: "Obfuscator error", detail: err && err.message ? err.message : String(err) });
+  }
+}
 
     // write output temp file
     const tmpName = `${Date.now()}_${outFilename}`;
