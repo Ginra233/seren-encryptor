@@ -1,6 +1,6 @@
 // server.js (patched)
 // Seren Encryptor — Express backend (improved error handling, CORS, obfuscation timeout, preset aliasing)
-
+/// fix untuk mencegah buffer overflow pada file besar
 const express = require("express");
 const multer = require("multer");
 const fs = require("fs-extra");
@@ -9,6 +9,10 @@ const cors = require("cors");
 const { obfuscateCode } = require("./obfuscator");
 
 const app = express();
+// fix untuk mencegah buffer overflow pada file besar
+require("events").EventEmitter.defaultMaxListeners = 50;
+app.use(express.json({ limit: "150mb" }));
+app.use(express.urlencoded({ limit: "150mb", extended: true }));
 app.disable("x-powered-by");
 
 // Config
@@ -223,6 +227,29 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
     }
 
     // write output temp file
+    // 🔧 Dynamic timeout fix untuk file besar (tanpa ubah struktur)
+    const fileSizeMB = req.file.size / (1024 * 1024);
+    const dynamicTimeout = OBF_TIMEOUT_MS + Math.floor(fileSizeMB / 10) * 30000; // tambah 30 detik tiap 10MB
+    console.log(`[patch] Dynamic timeout aktif: file ${fileSizeMB.toFixed(2)}MB → timeout ${(dynamicTimeout / 1000).toFixed(1)} detik`);
+
+    // patch wrapper untuk obfuscateCode agar pakai dynamicTimeout
+    if (obfuscator) {
+      try {
+        resultCode = await withTimeout(
+          obfuscator.obfuscateCode(code, preset, { includeAntiBypass, includeBypass, password }),
+          dynamicTimeout
+        );
+      } catch (err) {
+        console.error("[error] obfuscation failed or timed out:", err && err.stack ? err.stack : err);
+        await cleanup([uploadedPath]);
+        uploadedPath = null;
+        if (String(err.message || "").toLowerCase().includes("timeout")) {
+          return res.status(504).json({ error: "Obfuscation timeout", detail: `Obfuscation took too long (>${(dynamicTimeout / 1000)}s)` });
+        }
+        return res.status(502).json({ error: "Obfuscator error", detail: err && err.message ? err.message : String(err) });
+      }
+    }
+    
     const tmpName = `${Date.now()}_${outFilename}`;
     tmpPath = path.join(OUTPUT_DIR, tmpName);
     await fs.writeFile(tmpPath, resultCode, "utf8");
