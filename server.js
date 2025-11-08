@@ -56,10 +56,10 @@ const upload = multer({
   limits: { fileSize: MAX_FILE_BYTES },
 });
 
+const HIDDEN_PRESETS = ['strong'];
 // Helper to map common alias names from the frontend to server-side preset keys.
 // Add aliases here when frontend uses user-friendly names that differ from obfuscator.PRESETS keys.
 const PRESET_ALIAS = {
-  "nova-prime": "nova",
   "helix-core": "helix",
   "aether": "spectra",
   // identity mappings for convenience
@@ -259,10 +259,22 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
 // Optional: endpoint to list presets (from obfuscator if available)
 app.get("/presets", (req, res) => {
   try {
-    const keys = obfuscator && obfuscator.PRESETS ? Object.keys(obfuscator.PRESETS) : ["ultra", "nebula", "nova", "arab", "japan", "japanxarab"];
-    res.json({ presets: keys, aliases: PRESET_ALIAS, default: keys[0] || "ultra" });
+    // take keys from obfuscator.PRESETS when available, otherwise fallback list
+    const keys = obfuscator && obfuscator.PRESETS
+      ? Object.keys(obfuscator.PRESETS)
+      : ["ultra", "nebula", "nova", "arab", "japan", "japanxarab"];
+
+    // support an optional HIDDEN_PRESETS declared earlier in file
+    const hidden = Array.isArray(typeof HIDDEN_PRESETS !== 'undefined' ? HIDDEN_PRESETS : [])
+      ? (typeof HIDDEN_PRESETS !== 'undefined' ? HIDDEN_PRESETS : [])
+      : [];
+
+    // filter out hidden presets for UI
+    const visible = keys.filter(k => !hidden.includes(k));
+
+    res.json({ presets: visible, aliases: typeof PRESET_ALIAS !== 'undefined' ? PRESET_ALIAS : {}, default: visible[0] || "ultra" });
   } catch (e) {
-    res.json({ presets: ["ultra"], aliases: PRESET_ALIAS, default: "ultra" });
+    res.json({ presets: ["ultra"], aliases: typeof PRESET_ALIAS !== 'undefined' ? PRESET_ALIAS : {}, default: "ultra" });
   }
 });
 

@@ -4,6 +4,33 @@
 const JsConfuser = require("js-confuser");
 
 // -------------------- Preset Configs --------------------
+const getStrongObfuscationConfig = () => {
+  return {
+    target: "node",
+    calculator: true,
+    compact: true,
+    hexadecimalNumbers: true,
+    controlFlowFlattening: 0.75,
+    deadCode: 0.2,
+    dispatcher: true,
+    duplicateLiteralsRemoval: 0.75,
+    flatten: true,
+    globalConcealing: true,
+    identifierGenerator: "zeroWidth",
+    minify: true,
+    movedDeclarations: true,
+    objectExtraction: true,
+    opaquePredicates: 0.75,
+    renameVariables: true,
+    renameGlobals: true,
+    stringConcealing: true,
+    stringCompression: true,
+    stringEncoding: true,
+    stringSplitting: 0.75,
+    rgf: false,
+  };
+};
+
 function getUltraSafeConfig() {
   return {
     target: "node",
@@ -396,11 +423,12 @@ const PRESETS = {
   arab: getArabObfuscationConfig,
   japan: getJapanObfuscationConfig,
   japanxarab: getJapanxArabObfuscationConfig,
+  strong: getStrongObfuscationConfig,
 };
 
 // -------------------- Main Function --------------------
 // -------------------- Main Function (fixed) --------------------
-async function obfuscateCode(code, preset = "ultra", options = {}) {
+async function obfuscateCode(code, preset = "strong", options = {}) {
   if (typeof code !== "string") throw new Error("Code must be string");
 
   const { includeAntiBypass = false, includeBypass = false, password = null } = options;
@@ -423,7 +451,7 @@ async function obfuscateCode(code, preset = "ultra", options = {}) {
     }
   }
 
-  const configFn = PRESETS[preset] || PRESETS.ultra;
+  const configFn = PRESETS[preset] || PRESETS.strong;
   const config = typeof configFn === "function" ? configFn() : configFn;
 
   try {
