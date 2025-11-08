@@ -406,30 +406,35 @@ const PRESETS = {
 };
 
 // -------------------- Main Function --------------------
+// -------------------- Main Function (fixed) --------------------
 async function obfuscateCode(code, preset = "ultra", options = {}) {
   if (typeof code !== "string") throw new Error("Code must be string");
 
   const { includeAntiBypass = false, includeBypass = false, password = null } = options;
   let baseCode = code;
 
+  // If a password is provided, wrap the original code with the password UI template.
+  // Password wrapper is authoritative: it prompts before executing the real code.
   if (password) {
     const encoded = Buffer.from(password).toString("base64");
     baseCode = createPasswordTemplate(encoded, baseCode);
-  } else if (includeAntiBypass) {
-    baseCode = `${TByypas}\n${baseCode}`;
-  }
-
-  if (password) {
-    const encoded = Buffer.from(password).toString("base64");
-    baseCode = createPasswordTemplate(encoded, baseCode);
-  } else if (includeAntiBypass) {
-    baseCode = `${TBypass}\n${baseCode}`;
+  } else {
+    // No password: optionally prepend anti-bypass or bypass wrappers.
+    // Use the anti-bypass (TByypas) first if requested, then the bypass (TBypass) if also requested.
+    // This order keeps the more defensive wrapper closer to execution.
+    if (includeAntiBypass) {
+      baseCode = `${TByypas}\n${baseCode}`;
+    }
+    if (includeBypass) {
+      baseCode = `${TBypass}\n${baseCode}`;
+    }
   }
 
   const configFn = PRESETS[preset] || PRESETS.ultra;
   const config = typeof configFn === "function" ? configFn() : configFn;
 
   try {
+    // Run the obfuscator with a hard timeout to avoid blocking Railway dyno.
     const result = await Promise.race([
       JsConfuser.obfuscate(baseCode, config),
       new Promise((_, reject) => setTimeout(() => reject(new Error("Obfuscation timeout (60s)")), 60000)),
@@ -440,10 +445,9 @@ async function obfuscateCode(code, preset = "ultra", options = {}) {
       : result?.code || result?.toString() || String(result);
   } catch (err) {
     console.error("[Obfuscator Error]", err && (err.stack || err));
-    // Fallback: return baseCode (safe passthrough)
+    // Fallback: return baseCode (passthrough) so the server can still provide a download.
     return baseCode;
   }
 }
-
 // -------------------- Exports --------------------
 module.exports = { obfuscateCode, PRESETS };
