@@ -501,7 +501,7 @@ fileInput.addEventListener('change', e=> { if(e.target.files && e.target.files[0
 
 function handleFile(f){
   if(!f.name.endsWith('.js')) { statusText.textContent = '❌ Hanya file .js diperbolehkan'; return; }
-  if(f.size > 20 * 1024 * 1024) { statusText.textContent = '❌ File terlalu besar (max 20MB)'; return; }
+  if(f.size > 10 * 1024 * 1024) { statusText.textContent = '❌ File terlalu besar (max 10MB)'; return; }
   chosenFile = f;
   fileInfo.textContent = `${f.name} • ${(f.size/10024).toFixed(1)} KB`;
   statusText.textContent = '✅ File siap untuk dienkripsi';
