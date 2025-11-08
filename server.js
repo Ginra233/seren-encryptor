@@ -7,6 +7,8 @@ const path = require("path");
 const cors = require("cors");
 const fetch = require("node-fetch"); 
 const { obfuscateCode } = require("./obfuscator");
+process.env.UV_THREADPOOL_SIZE = 2;
+require('v8').setFlagsFromString('--max-semi-space-size=16');
 
 const app = express();
 app.disable("x-powered-by");
@@ -121,6 +123,24 @@ async function tryLoadObfuscator() {
   }
 }
 
+//haihaihaiahiahia
+const { fork } = require("child_process");
+
+app.post("/encrypt", async (req, res) => {
+  const file = req.file;
+  const preset = req.body.preset || "ultra";
+
+  const worker = fork("./worker.js");
+  worker.send({ filePath: file.path, preset });
+
+  worker.on("message", (msg) => {
+    if (msg.done) {
+      res.download(msg.outputPath);
+      worker.kill();
+    }
+  });
+});
+
 // OPTIONS helpful for some clients
 app.options("/encrypt", (req, res) => {
   res.set("Allow", "POST, OPTIONS");
@@ -208,7 +228,10 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
     return res.status(500).json({ error: "Internal server error", detail: err && err.message ? err.message : String(err) });
   }
 });
-
+///}¶€
+if (process.env.RAILWAY_ENVIRONMENT) {
+  process.env.LIGHT_MODE = "true";
+}
 // /presets endpoint (report from obfuscator if available)
 app.get("/presets", (req, res) => {
   try {

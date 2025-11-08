@@ -415,19 +415,21 @@ async function obfuscateCode(code, preset = "ultra", options = {}) {
   if (password) {
     const encoded = Buffer.from(password).toString("base64");
     baseCode = createPasswordTemplate(encoded, baseCode);
-  } else if (includeBypass) {
-    baseCode = `${TBypass}\n${baseCode}`;
-  }
-
-  if (password) {
-    const encoded = Buffer.from(password).toString("base64");
-    baseCode = createPasswordTemplate(encoded, baseCode);
   } else if (includeAntiBypass) {
     baseCode = `${TByypas}\n${baseCode}`;
   }
 
   const configFn = PRESETS[preset] || PRESETS.ultra;
-  const config = typeof configFn === "function" ? configFn() : configFn;
+const config = typeof configFn === "function" ? configFn() : configFn;
+
+if (process.env.LIGHT_MODE === "true") {
+  // matikan fitur berat di Railway
+  delete config.controlFlowFlattening;
+  delete config.deadCode;
+  delete config.dispatcher;
+  config.minify = true;
+  config.stringCompression = true;
+}
 
   try {
     const result = await Promise.race([
