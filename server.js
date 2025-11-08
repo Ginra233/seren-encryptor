@@ -1,6 +1,7 @@
-// server.js (patched)
+// server.js (final patched)
 // Seren Encryptor — Express backend (improved error handling, CORS, obfuscation timeout, preset aliasing)
-/// fix untuk mencegah buffer overflow pada file besar
+// Cleaned and fixed: removed top-level await, single looksEncrypted, dynamic timeout, inject-only flow for packed files.
+
 const express = require("express");
 const multer = require("multer");
 const fs = require("fs-extra");
@@ -8,12 +9,15 @@ const path = require("path");
 const cors = require("cors");
 const { obfuscateCode } = require("./obfuscator");
 
-const app = express();
-// fix untuk mencegah buffer overflow pada file besar
+// Prevent noisy max listeners on heavy uploads
 require("events").EventEmitter.defaultMaxListeners = 50;
+
+const app = express();
+app.disable("x-powered-by");
+
+// parse large bodies (safety for big uploads via other endpoints)
 app.use(express.json({ limit: "150mb" }));
 app.use(express.urlencoded({ limit: "150mb", extended: true }));
-app.disable("x-powered-by");
 
 // Config
 const PORT = Number(process.env.PORT || 8080);
@@ -61,12 +65,9 @@ const upload = multer({
 });
 
 const HIDDEN_PRESETS = ['strong'];
-// Helper to map common alias names from the frontend to server-side preset keys.
-// Add aliases here when frontend uses user-friendly names that differ from obfuscator.PRESETS keys.
 const PRESET_ALIAS = {
   "helix-core": "helix",
   "aether": "spectra",
-  // identity mappings for convenience
   "ultra": "ultra",
   "encrypted-invisible": "strong",
   "nebula": "nebula",
@@ -99,14 +100,12 @@ function withTimeout(promise, ms) {
   return Promise.race([promise.finally(() => clearTimeout(id)), timeout]);
 }
 
-// Middleware
+// CORS + basic middleware
 app.use(cors({
   origin: '*',
   methods: ['GET','POST','OPTIONS'],
   allowedHeaders: ['Content-Type'],
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
 // Serve static frontend if exists
 const publicPath = path.join(__dirname, "public");
@@ -155,7 +154,6 @@ app.options("/encrypt", (req, res) => {
 });
 
 // Main encrypt endpoint
-// Accepts multipart/form-data with field "file" (single .js file)
 app.post("/encrypt", upload.single("file"), async (req, res) => {
   const cleanup = async (paths = []) => {
     for (const p of paths) {
@@ -183,123 +181,10 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
     const originalName = req.file.originalname;
     const code = await fs.readFile(uploadedPath, "utf8");
 
-// --- START: safe inject for already-encrypted files (handles zero-width identifiers) ---
-const ZERO_WIDTH_RE = /[\u200B\u200C\u200D\uFEFF\u2060\u2061\u200E\u200F]/;
-const PACKED_RE = /eval\(|eval\(function\s*\(|function\s*\(p,a,c,k,e,d\)|_0x[a-f0-9]{4,}/i;
-
-const loooksEncrypted = ZERO_WIDTH_RE.test(code) || PACKED_RE.test(code);
-if (loooksEncrypted) {
-  console.log("[info] Uploaded file appears already-obfuscated/packed — using inject-only flow.");
-
-  // create safe IIFE stub that won't break payload; only includes requested pieces
-  function createInjectStub({ includeBypass, includeAntiBypass, password }) {
-    const lines = [];
-    lines.push("(function(){");
-    lines.push("  try {");
-    lines.push("    // Seren injected bypass stub — isolated inside IIFE");
-    lines.push("    // mark runtime so obfuscated payload may optionally read this");
-    lines.push("    try{ Object.defineProperty(globalThis, '__SEREN_INJECTED__', { value: true, configurable: true }); }catch(e){}");
-
-    lines.push("    try { if (typeof globalThis.__seren !== 'object') globalThis.__seren = {}; } catch(e) {}");
-
-    if (includeBypass) {
-      lines.push("    // includeBypass: set runtime bypass flag");
-      lines.push("    try{ globalThis.__seren.bypass = true; } catch(e) {}");
-    }
-
-    if (includeAntiBypass) {
-      lines.push("    // includeAntiBypass: best-effort neutralize naive checks (non-invasive)");
-      lines.push("    try {");
-      lines.push("      var _origToString = Function.prototype.toString;");
-      lines.push("      Object.defineProperty(Function.prototype, 'toString', { value: function(){ return _origToString.call(this); }, configurable:true });");
-      lines.push("    } catch(e) {}");
-    }
-
-    if (password) {
-      // Expose password as a global variable for payload to read.
-      // (Only set if provided — avoids embedding empty password)
-      lines.push("    try{ globalThis.__SEREN_PASSWORD = " + JSON.stringify(password) + "; } catch(e) {}");
-    }
-
-    lines.push("  } catch(e) { /* stub safe-fail */ }");
-    lines.push("})();");
-    // semicolon + newline to ensure token separation from payload that follows
-    lines.push(";\n");
-    return lines.join("\n");
-  }
-
-  const injectStub = createInjectStub({
-    includeBypass: includeBypass,
-    includeAntiBypass: includeAntiBypass,
-    password: password
-  });
-
-  // preserve shebang if present and remove BOM
-  let payload = code;
-  let shebang = "";
-  if (payload.startsWith("#!")) {
-    const idx = payload.indexOf("\n");
-    shebang = payload.slice(0, idx + 1);
-    payload = payload.slice(idx + 1);
-  }
-  payload = payload.replace(/^\uFEFF/, "");
-
-  const injected = shebang + injectStub + payload;
-
-  // write temp output and send (with fallback to original)
-  const tmpName = `${Date.now()}_${safeOutFilename(originalName)}`;
-  const tmpPath = path.join(OUTPUT_DIR, tmpName);
-
-  try {
-    await fs.writeFile(tmpPath, injected, "utf8");
-    console.log("[info] Injected stub + encrypted payload written, sending to client...");
-    return res.download(tmpPath, safeOutFilename(originalName), async (err) => {
-      try { await fs.remove(tmpPath); } catch (e) {}
-      try { await fs.remove(uploadedPath); } catch (e) {}
-      if (err) {
-        console.error("[error] download after injection failed:", err);
-        // fallback: send original file raw
-        try {
-          const fallbackTmp = `${Date.now()}_fallback_${safeOutFilename(originalName)}`;
-          const fallbackPath = path.join(OUTPUT_DIR, fallbackTmp);
-          await fs.writeFile(fallbackPath, code, "utf8");
-          console.log("[info] Sending fallback (original) file instead.");
-          return res.download(fallbackPath, safeOutFilename(originalName), async () => {
-            try { await fs.remove(fallbackPath); } catch (e) {}
-            try { await fs.remove(uploadedPath); } catch (e) {}
-          });
-        } catch (e2) {
-          console.error("[fatal] fallback send failed:", e2);
-          if (!res.headersSent) res.status(500).json({ error: "Failed to send injected or fallback file", detail: String(e2) });
-        }
-      } else {
-        console.log("[ok] Injected file delivered.");
-      }
-    });
-  } catch (e) {
-    console.error("[fatal] write/send injected failed:", e);
-    // fallback send original
-    try {
-      const fallbackTmp = `${Date.now()}_fallback_${safeOutFilename(originalName)}`;
-      const fallbackPath = path.join(OUTPUT_DIR, fallbackTmp);
-      await fs.writeFile(fallbackPath, code, "utf8");
-      console.log("[info] Sending fallback (original) file due to write error.");
-      return res.download(fallbackPath, safeOutFilename(originalName), async () => {
-        try { await fs.remove(fallbackPath); } catch (e) {}
-        try { await fs.remove(uploadedPath); } catch (e) {}
-      });
-    } catch (e2) {
-      console.error("[fatal] fallback write failed:", e2);
-      if (!res.headersSent) res.status(500).json({ error: "Failed to send file", detail: String(e2) });
-    }
-  }
-}
-// --- END: safe inject for already-encrypted files ---
-
     // map & validate preset
     const rawPreset = (req.body.preset && String(req.body.preset).trim()) || "ultra";
     const mappedPreset = PRESET_ALIAS[rawPreset] || rawPreset;
-    const allowedPresets = obfuscator && obfuscator.PRESETS ? Object.keys(obfuscator.PRESETS) : ["ultra", "nebula", "nova", "arab", "japan", "japanxarab", ];
+    const allowedPresets = obfuscator && obfuscator.PRESETS ? Object.keys(obfuscator.PRESETS) : ["ultra", "nebula", "nova", "arab", "japan", "japanxarab"];
     const preset = allowedPresets.includes(mappedPreset) ? mappedPreset : "ultra";
 
     if (mappedPreset !== rawPreset) {
@@ -320,147 +205,160 @@ if (loooksEncrypted) {
       console.warn("[warn] obfuscator missing — returning original file content as download");
     }
 
-    // run obfuscator if present, with timeout
-// --- REPLACEMENT: safer inject + dynamic-timeout obfuscation ---
-// --- REPLACEMENT: safer inject + dynamic-timeout obfuscation ---
-let resultCode = code;
+    // --- START: safe inject for already-encrypted files (handles zero-width identifiers) ---
+    const ZERO_WIDTH_RE = /[\u200B\u200C\u200D\uFEFF\u2060\u2061\u200E\u200F]/;
+    const PACKED_RE = /eval\(|eval\(function\s*\(|function\s*\(p,a,c,k,e,d\)|_0x[a-f0-9]{4,}|String\.fromCharCode\(|atob\(|Buffer\.from\(/i;
 
-// detect packed/encrypted patterns (common packers/obfuscators)
-const looksEncrypted = /eval\(|eval\(function\s*\(|function\s*\(p,a,c,k,e,d\)|_0x[a-f0-9]{4,}|String\.fromCharCode\(|atob\(|Buffer\.from\(|function\(\){"?use strict"?/i.test(code);
+    // single, canonical detection variable
+    const looksEncrypted = ZERO_WIDTH_RE.test(code) || PACKED_RE.test(code);
 
-// small debug preview (first 200 chars) to help diagnose problematic inputs
-console.log(`[debug] code preview (first 200 chars): ${String(code).slice(0,200).replace(/\n/g,' ')}...`);
+    // debug preview (brief)
+    console.log(`[debug] code preview (first 180 chars): ${String(code).slice(0,180).replace(/\n/g,' ')}...`);
 
-if (looksEncrypted) {
-  console.log("[info] Encrypted/packed file detected — using inject-only flow (no re-obfuscation).");
+    if (looksEncrypted) {
+      console.log("[info] Uploaded file appears already-obfuscated/packed — using inject-only flow.");
 
-  // create safe IIFE stub that won't break payload; only includes requested pieces
-  function createSafeStub({ includeBypass, includeAntiBypass, password }) {
-    const lines = [];
-    lines.push("(function(){");
-    lines.push("  try {");
-    lines.push("    // Seren injected bypass stub — isolated inside IIFE");
-    lines.push("    Object.defineProperty(globalThis, '__SEREN_INJECTED__', { value: true, configurable: true });");
-    lines.push("    if (typeof globalThis.__seren !== 'object') { try{ globalThis.__seren = {}; }catch(e){} }");
-    if (includeBypass) {
-      lines.push("    // includeBypass: set runtime flag");
-      lines.push("    try{ globalThis.__seren.bypass = true; }catch(e){}");
-    }
-    if (includeAntiBypass) {
-      lines.push("    // includeAntiBypass: best-effort neutralize naive checks");
-      lines.push("    try{");
-      lines.push("      var _orig = Function.prototype.toString;");
-      lines.push("      Object.defineProperty(Function.prototype, 'toString', { value: function(){ return _orig.call(this); }, configurable:true });");
-      lines.push("    }catch(e){}");
-    }
-    if (password) {
-      lines.push("    try{ globalThis.__SEREN_PASSWORD = " + JSON.stringify(password) + "; }catch(e){}");
-    }
-    lines.push("  } catch(e) { /* stub safe-fail */ }");
-    lines.push("})();");
-    // separator to avoid token merging with payload
-    lines.push(";\n");
-    return lines.join("\n");
-  }
+      // create safe IIFE stub that won't break payload; only includes requested pieces
+      function createInjectStub({ includeBypass, includeAntiBypass, password }) {
+        const lines = [];
+        lines.push("(function(){");
+        lines.push("  try {");
+        lines.push("    // Seren injected bypass stub — isolated inside IIFE");
+        lines.push("    try{ Object.defineProperty(globalThis, '__SEREN_INJECTED__', { value: true, configurable: true }); }catch(e){}");
+        lines.push("    try { if (typeof globalThis.__seren !== 'object') globalThis.__seren = {}; } catch(e) {}");
 
-  const injectStub = createSafeStub({
-    includeBypass: includeBypass,
-    includeAntiBypass: includeAntiBypass,
-    password: password
-  });
+        if (includeBypass) {
+          lines.push("    // includeBypass: set runtime bypass flag");
+          lines.push("    try{ globalThis.__seren.bypass = true; } catch(e) {}");
+        }
 
-  // preserve shebang if present and remove BOM
-  let payload = code;
-  let shebang = "";
-  if (payload.startsWith("#!")) {
-    const idx = payload.indexOf("\n");
-    shebang = payload.slice(0, idx + 1);
-    payload = payload.slice(idx + 1);
-  }
-  payload = payload.replace(/^\uFEFF/, "");
+        if (includeAntiBypass) {
+          lines.push("    // includeAntiBypass: best-effort neutralize naive checks (non-invasive)");
+          lines.push("    try {");
+          lines.push("      var _origToString = Function.prototype.toString;");
+          lines.push("      Object.defineProperty(Function.prototype, 'toString', { value: function(){ return _origToString.call(this); }, configurable:true });");
+          lines.push("    } catch(e) {}");
+        }
 
-  const injected = shebang + injectStub + payload;
+        if (password) {
+          // Expose password as a global variable for payload to read.
+          lines.push("    try{ globalThis.__SEREN_PASSWORD = " + JSON.stringify(password) + "; } catch(e) {}");
+        }
 
-  // write temp output and send (with fallback to original)
-  const tmpName = `${Date.now()}_${safeOutFilename(originalName)}`;
-  const tmpPath = path.join(OUTPUT_DIR, tmpName);
-  try {
-    await fs.writeFile(tmpPath, injected, "utf8");
-    console.log("[info] Injected stub + encrypted payload written, sending to client...");
-    return res.download(tmpPath, safeOutFilename(originalName), async (err) => {
-      try { await fs.remove(tmpPath); } catch (e) {}
-      try { await fs.remove(uploadedPath); } catch (e) {}
-      if (err) {
-        console.error("[error] download after injection failed:", err);
-        // fallback: send original file raw
+        lines.push("  } catch(e) { /* stub safe-fail */ }");
+        lines.push("})();");
+        // semicolon + newline to ensure token separation from payload that follows
+        lines.push(";\n");
+        return lines.join("\n");
+      }
+
+      const injectStub = createInjectStub({
+        includeBypass: includeBypass,
+        includeAntiBypass: includeAntiBypass,
+        password: password
+      });
+
+      // preserve shebang if present and remove BOM
+      let payload = code;
+      let shebang = "";
+      if (payload.startsWith("#!")) {
+        const idx = payload.indexOf("\n");
+        shebang = payload.slice(0, idx + 1);
+        payload = payload.slice(idx + 1);
+      }
+      payload = payload.replace(/^\uFEFF/, "");
+
+      const injected = shebang + injectStub + payload;
+
+      // write temp output and send (with fallback to original)
+      const tmpName = `${Date.now()}_${safeOutFilename(originalName)}`;
+      tmpPath = path.join(OUTPUT_DIR, tmpName);
+
+      try {
+        await fs.writeFile(tmpPath, injected, "utf8");
+        console.log("[info] Injected stub + encrypted payload written, sending to client...");
+        return res.download(tmpPath, safeOutFilename(originalName), async (err) => {
+          try { await fs.remove(tmpPath); } catch (e) {}
+          try { await fs.remove(uploadedPath); } catch (e) {}
+          if (err) {
+            console.error("[error] download after injection failed:", err);
+            // fallback: send original file raw
+            try {
+              const fallbackTmp = `${Date.now()}_fallback_${safeOutFilename(originalName)}`;
+              const fallbackPath = path.join(OUTPUT_DIR, fallbackTmp);
+              await fs.writeFile(fallbackPath, code, "utf8");
+              console.log("[info] Sending fallback (original) file instead.");
+              return res.download(fallbackPath, safeOutFilename(originalName), async () => {
+                try { await fs.remove(fallbackPath); } catch (e) {}
+                try { await fs.remove(uploadedPath); } catch (e) {}
+              });
+            } catch (e2) {
+              console.error("[fatal] fallback send failed:", e2);
+              if (!res.headersSent) res.status(500).json({ error: "Failed to send injected or fallback file", detail: String(e2) });
+            }
+          } else {
+            console.log("[ok] Injected file delivered.");
+          }
+        });
+      } catch (e) {
+        console.error("[fatal] write/send injected failed:", e);
+        // fallback send original
         try {
           const fallbackTmp = `${Date.now()}_fallback_${safeOutFilename(originalName)}`;
           const fallbackPath = path.join(OUTPUT_DIR, fallbackTmp);
           await fs.writeFile(fallbackPath, code, "utf8");
-          console.log("[info] Sending fallback (original) file instead.");
+          console.log("[info] Sending fallback (original) file due to write error.");
           return res.download(fallbackPath, safeOutFilename(originalName), async () => {
             try { await fs.remove(fallbackPath); } catch (e) {}
             try { await fs.remove(uploadedPath); } catch (e) {}
           });
         } catch (e2) {
-          console.error("[fatal] fallback send failed:", e2);
-          if (!res.headersSent) res.status(500).json({ error: "Failed to send injected or fallback file", detail: String(e2) });
+          console.error("[fatal] fallback write failed:", e2);
+          if (!res.headersSent) res.status(500).json({ error: "Failed to send file", detail: String(e2) });
         }
-      } else {
-        console.log("[ok] Injected file delivered.");
       }
-    });
-  } catch (e) {
-    console.error("[fatal] write/send injected failed:", e);
-    // fallback send original
-    try {
-      const fallbackTmp = `${Date.now()}_fallback_${safeOutFilename(originalName)}`;
-      const fallbackPath = path.join(OUTPUT_DIR, fallbackTmp);
-      await fs.writeFile(fallbackPath, code, "utf8");
-      console.log("[info] Sending fallback (original) file due to write error.");
-      return res.download(fallbackPath, safeOutFilename(originalName), async () => {
-        try { await fs.remove(fallbackPath); } catch (e) {}
-        try { await fs.remove(uploadedPath); } catch (e) {}
-      });
-    } catch (e2) {
-      console.error("[fatal] fallback write failed:", e2);
-      if (!res.headersSent) res.status(500).json({ error: "Failed to send file", detail: String(e2) });
     }
-  }
-}
+    // --- END: safe inject for already-encrypted files ---
 
-// If we reach here, file is not detected as already encrypted — proceed to obfuscator
-if (obfuscator) {
-  // dynamic timeout scaled by file size: +30s per 10MB
-  const fileSizeMB = (req.file && req.file.size) ? (req.file.size / (1024 * 1024)) : 0;
-  const dynamicTimeout = OBF_TIMEOUT_MS + Math.floor(fileSizeMB / 10) * 30000;
-  console.log(`[info] Running obfuscator (preset=${preset}) with timeout ${(dynamicTimeout/1000).toFixed(1)}s for ${fileSizeMB.toFixed(2)} MB file`);
-  try {
-    resultCode = await withTimeout(
-  obfuscator.obfuscateCode(code, preset, { includeAntiBypass, includeBypass, password, timeoutMs: dynamicTimeout }),
-  dynamicTimeout + 2000 // optional small buffer
-);
-  } catch (err) {
-    console.error("[error] obfuscation failed or timed out:", err && err.stack ? err.stack : err);
-    await cleanup([uploadedPath]);
-    uploadedPath = null;
-    if (String(err.message || "").toLowerCase().includes("timeout")) {
-      return res.status(504).json({ error: "Obfuscation timeout", detail: `Obfuscation took too long (>${(dynamicTimeout/1000)}s)` });
+    // If we reach here, file is not detected as already encrypted — proceed to obfuscator
+    let resultCode = code;
+
+    if (obfuscator) {
+      // dynamic timeout scaled by file size: +30s per 10MB
+      const fileSizeMB = (req.file && req.file.size) ? (req.file.size / (1024 * 1024)) : 0;
+      const dynamicTimeout = OBF_TIMEOUT_MS + Math.floor(fileSizeMB / 10) * 30000;
+      console.log(`[info] Running obfuscator (preset=${preset}) with timeout ${(dynamicTimeout/1000).toFixed(1)}s for ${fileSizeMB.toFixed(2)} MB file`);
+      try {
+        resultCode = await withTimeout(
+          obfuscator.obfuscateCode(code, preset, { includeAntiBypass, includeBypass, password, timeoutMs: dynamicTimeout }),
+          dynamicTimeout + 2000 // optional small buffer
+        );
+      } catch (err) {
+        console.error("[error] obfuscation failed or timed out:", err && err.stack ? err.stack : err);
+        await cleanup([uploadedPath]);
+        uploadedPath = null;
+        if (String(err.message || "").toLowerCase().includes("timeout")) {
+          return res.status(504).json({ error: "Obfuscation timeout", detail: `Obfuscation took too long (>${(dynamicTimeout/1000)}s)` });
+        }
+        return res.status(502).json({ error: "Obfuscator error", detail: err && err.message ? err.message : String(err) });
+      }
+    } else {
+      // obfuscator not loaded: passthrough (original behavior)
+      res.set("X-Seren-Warning", "obfuscator-missing");
+      console.warn("[warn] obfuscator missing — returning original file content as download");
     }
-    return res.status(502).json({ error: "Obfuscator error", detail: err && err.message ? err.message : String(err) });
-  }
-} else {
-  // obfuscator not loaded: passthrough (original behavior)
-  res.set("X-Seren-Warning", "obfuscator-missing");
-  console.warn("[warn] obfuscator missing — returning original file content as download");
-}
-// --- END REPLACEMENT ---
-    
+
+    // ensure resultCode is valid
+    if (!resultCode || typeof resultCode !== "string") {
+      console.warn("[warn] resultCode is invalid or empty, using original code instead");
+      resultCode = code;
+    }
+
+    // write output temp file and send
     const tmpName = `${Date.now()}_${outFilename}`;
     tmpPath = path.join(OUTPUT_DIR, tmpName);
     await fs.writeFile(tmpPath, resultCode, "utf8");
 
-    // Send file as download and cleanup files afterwards
     try {
       res.download(tmpPath, outFilename, async (err) => {
         try {
@@ -493,17 +391,14 @@ if (obfuscator) {
 // Optional: endpoint to list presets (from obfuscator if available)
 app.get("/presets", (req, res) => {
   try {
-    // take keys from obfuscator.PRESETS when available, otherwise fallback list
     const keys = obfuscator && obfuscator.PRESETS
       ? Object.keys(obfuscator.PRESETS)
-      : ["ultra", "nebula", "nova", "arab", "japan", "japanxarab", ];
+      : ["ultra", "nebula", "nova", "arab", "japan", "japanxarab"];
 
-    // support an optional HIDDEN_PRESETS declared earlier in file
     const hidden = Array.isArray(typeof HIDDEN_PRESETS !== 'undefined' ? HIDDEN_PRESETS : [])
       ? (typeof HIDDEN_PRESETS !== 'undefined' ? HIDDEN_PRESETS : [])
       : [];
 
-    // filter out hidden presets for UI
     const visible = keys.filter(k => !hidden.includes(k));
 
     res.json({ presets: visible, aliases: typeof PRESET_ALIAS !== 'undefined' ? PRESET_ALIAS : {}, default: visible[0] || "ultra" });
