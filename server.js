@@ -64,6 +64,7 @@ const PRESET_ALIAS = {
   "aether": "spectra",
   // identity mappings for convenience
   "ultra": "ultra",
+  "encrypted-invisible": "strong",
   "nebula": "nebula",
   "nova": "nova",
   "arab": "arab",
@@ -179,16 +180,16 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
     const code = await fs.readFile(uploadedPath, "utf8");
 
     // map & validate preset
-    const rawPreset = (req.body.preset && String(req.body.preset).trim()) || "ultra";
+    const rawPreset = (req.body.preset && String(req.body.preset).trim()) || "encrypted-invisible";
     const mappedPreset = PRESET_ALIAS[rawPreset] || rawPreset;
-    const allowedPresets = obfuscator && obfuscator.PRESETS ? Object.keys(obfuscator.PRESETS) : ["ultra", "nebula", "nova", "arab", "japan", "japanxarab"];
-    const preset = allowedPresets.includes(mappedPreset) ? mappedPreset : "ultra";
+    const allowedPresets = obfuscator && obfuscator.PRESETS ? Object.keys(obfuscator.PRESETS) : ["ultra", "nebula", "nova", "arab", "japan", "japanxarab", "encrypted-invisible", ];
+    const preset = allowedPresets.includes(mappedPreset) ? mappedPreset : "encrypted-invisible";
 
     if (mappedPreset !== rawPreset) {
       console.log(`[info] Mapped frontend preset "${rawPreset}" -> "${mappedPreset}"`);
     }
     if (preset !== mappedPreset) {
-      console.warn(`[warn] Requested preset "${mappedPreset}" is not allowed; falling back to "ultra"`);
+      console.warn(`[warn] Requested preset "${mappedPreset}" is not allowed; falling back to "encrypted-invisible"`);
     }
 
     const outFilename = (req.body.filename && String(req.body.filename).trim()) ? String(req.body.filename).trim() : safeOutFilename(originalName);
@@ -262,7 +263,7 @@ app.get("/presets", (req, res) => {
     // take keys from obfuscator.PRESETS when available, otherwise fallback list
     const keys = obfuscator && obfuscator.PRESETS
       ? Object.keys(obfuscator.PRESETS)
-      : ["ultra", "nebula", "nova", "arab", "japan", "japanxarab"];
+      : ["ultra", "nebula", "nova", "arab", "japan", "japanxarab", "encrypted-invisible"];
 
     // support an optional HIDDEN_PRESETS declared earlier in file
     const hidden = Array.isArray(typeof HIDDEN_PRESETS !== 'undefined' ? HIDDEN_PRESETS : [])
@@ -272,9 +273,9 @@ app.get("/presets", (req, res) => {
     // filter out hidden presets for UI
     const visible = keys.filter(k => !hidden.includes(k));
 
-    res.json({ presets: visible, aliases: typeof PRESET_ALIAS !== 'undefined' ? PRESET_ALIAS : {}, default: visible[0] || "ultra" });
+    res.json({ presets: visible, aliases: typeof PRESET_ALIAS !== 'undefined' ? PRESET_ALIAS : {}, default: visible[0] || "encrypted-invisible" });
   } catch (e) {
-    res.json({ presets: ["ultra"], aliases: typeof PRESET_ALIAS !== 'undefined' ? PRESET_ALIAS : {}, default: "ultra" });
+    res.json({ presets: ["encrypted-invisible"], aliases: typeof PRESET_ALIAS !== 'undefined' ? PRESET_ALIAS : {}, default: "encrypted-invisible" });
   }
 });
 
