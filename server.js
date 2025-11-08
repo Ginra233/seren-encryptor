@@ -84,6 +84,20 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// --- DEBUG & FIX CORS for Railway ---
+app.use((req, res, next) => {
+  console.log(`[REQ] ${req.method} ${req.path} | Origin: ${req.headers.origin || '-'} | CT: ${req.headers['content-type'] || '-'}`);
+  next();
+});
+
+app.options('*', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+  });
+  res.sendStatus(204);
+});
 
 // Serve static frontend if exists
 const publicPath = path.join(__dirname, "public");
