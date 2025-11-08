@@ -187,8 +187,8 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
 const ZERO_WIDTH_RE = /[\u200B\u200C\u200D\uFEFF\u2060\u2061\u200E\u200F]/;
 const PACKED_RE = /eval\(|eval\(function\s*\(|function\s*\(p,a,c,k,e,d\)|_0x[a-f0-9]{4,}/i;
 
-const looksEncrypted = ZERO_WIDTH_RE.test(code) || PACKED_RE.test(code);
-if (looksEncrypted) {
+const loooksEncrypted = ZERO_WIDTH_RE.test(code) || PACKED_RE.test(code);
+if (loooksEncrypted) {
   console.log("[info] Uploaded file appears already-obfuscated/packed — using inject-only flow.");
 
   // create safe IIFE stub that won't break payload; only includes requested pieces
