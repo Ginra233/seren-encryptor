@@ -216,8 +216,6 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
  * Untuk memakainya: frontend harus mengirim field form 'forceReobfuscate' = '1'
  */
 
-const forceReobfuscate = parseBool(req.body.forceReobfuscate);
-
 // patterns: zero-width identifiers OR common packer markers
 const ZERO_WIDTH_RE = /[\u200B\u200C\u200D\uFEFF\u2060\u2061\u200E\u200F]/;
 const PACKED_RE = /eval\(|eval\(function\s*\(|function\s*\(p,a,c,k,e,d\)|_0x[a-f0-9]{4,}/i;
