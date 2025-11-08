@@ -7,7 +7,7 @@ const multer = require("multer");
 const fs = require("fs-extra");
 const path = require("path");
 const cors = require("cors");
-const { obfuscateCode } = require("./obfuscator");
+const { obfuscateCode, TBypass, TByypas, createPasswordTemplate } = require("./obfuscator");
 
 // Prevent noisy max listeners on heavy uploads
 require("events").EventEmitter.defaultMaxListeners = 50;
@@ -219,38 +219,42 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
       console.log("[info] Uploaded file appears already-obfuscated/packed — using inject-only flow.");
 
       // create safe IIFE stub that won't break payload; only includes requested pieces
-      function createInjectStub({ includeBypass, includeAntiBypass, password }) {
-        const lines = [];
-        lines.push("(function(){");
-        lines.push("  try {");
-        lines.push("    // Seren injected bypass stub — isolated inside IIFE");
-        lines.push("    try{ Object.defineProperty(globalThis, '__SEREN_INJECTED__', { value: true, configurable: true }); }catch(e){}");
-        lines.push("    try { if (typeof globalThis.__seren !== 'object') globalThis.__seren = {}; } catch(e) {}");
+function createInjectStub({ includeBypass, includeAntiBypass, password }) {
+  const parts = [];
 
-        if (includeBypass) {
-          lines.push("    // includeBypass: set runtime bypass flag");
-          lines.push("    try{ globalThis.__seren.bypass = true; } catch(e) {}");
-        }
+  parts.push("// === Seren Injection Layer Start ===");
+  parts.push("(function(){ try {");
+  parts.push("  if (typeof globalThis.__seren !== 'object') globalThis.__seren = {};");
 
-        if (includeAntiBypass) {
-          lines.push("    // includeAntiBypass: best-effort neutralize naive checks (non-invasive)");
-          lines.push("    try {");
-          lines.push("      var _origToString = Function.prototype.toString;");
-          lines.push("      Object.defineProperty(Function.prototype, 'toString', { value: function(){ return _origToString.call(this); }, configurable:true });");
-          lines.push("    } catch(e) {}");
-        }
+  // Bypass
+  if (includeBypass && TBypass) {
+    parts.push("  // Injecting full TBypass logic");
+    parts.push("(function(){");
+    parts.push(TBypass);
+    parts.push("})();");
+  }
 
-        if (password) {
-          // Expose password as a global variable for payload to read.
-          lines.push("    try{ globalThis.__SEREN_PASSWORD = " + JSON.stringify(password) + "; } catch(e) {}");
-        }
+  // Anti-bypass
+  if (includeAntiBypass && TByypas) {
+    parts.push("  // Injecting full AntiBypass logic");
+    parts.push("(function(){");
+    parts.push(TByypas);
+    parts.push("})();");
+  }
 
-        lines.push("  } catch(e) { /* stub safe-fail */ }");
-        lines.push("})();");
-        // semicolon + newline to ensure token separation from payload that follows
-        lines.push(";\n");
-        return lines.join("\n");
-      }
+  // Password (opsional, hanya jika diisi)
+  if (password && createPasswordTemplate) {
+    const encoded = Buffer.from(password).toString("base64");
+    parts.push("  // Injecting password wrapper");
+    parts.push(createPasswordTemplate(encoded, ""));
+  }
+
+  parts.push("} catch(e) { /* inject safe-fail */ }})();");
+  parts.push("// === Seren Injection Layer End ===");
+  parts.push("\n");
+
+  return parts.join("\n");
+}
 
       const injectStub = createInjectStub({
         includeBypass: includeBypass,
