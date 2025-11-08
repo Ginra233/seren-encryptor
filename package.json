@@ -5,9 +5,8 @@
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
-  "start": "node --max-old-space-size=256 server.js",
-  "dev": "NODE_ENV=development nodemon --max-old-space-size=256 server.js"
-  }
+    "start": "node --max-old-space-size=256 server.js",
+    "dev": "NODE_ENV=development nodemon --max-old-space-size=256 server.js"
   },
   "engines": {
     "node": ">=18.0.0"
