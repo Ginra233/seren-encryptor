@@ -455,15 +455,30 @@ async function obfuscateCode(code, preset = "strong", options = {}) {
   const config = typeof configFn === "function" ? configFn() : configFn;
 
   try {
-    // Run the obfuscator with a hard timeout to avoid blocking Railway dyno.
-    const result = await Promise.race([
+    // allow caller to suggest timeout (ms); fallback to 120s if not provided
+    const internalTimeoutMs = (options && typeof options.timeoutMs === "number") ? options.timeoutMs : 120000;
+
+    // run obfuscation but respect internalTimeoutMs to avoid indefinite blocking
+    const rawResult = await Promise.race([
       JsConfuser.obfuscate(baseCode, config),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("Obfuscation timeout (60s)")), 60000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`Obfuscation timeout (${internalTimeoutMs}ms)`)), internalTimeoutMs)),
     ]);
 
-    return typeof result === "string"
-      ? result
-      : result?.code || result?.toString() || String(result);
+    // normalize result string
+    const resultString = typeof rawResult === "string"
+      ? rawResult
+      : (rawResult && (rawResult.code || rawResult.toString())) || String(rawResult);
+
+    // prepend a small preamble so runtime-injected stubs (globalThis.__SEREN_*) are honored
+    // this lets server-injected globals influence obfuscated runtime behavior.
+    const preamble = `(function(){ try {
+  if (typeof globalThis !== "undefined") {
+    if (globalThis.__SEREN_BYPASS) { try { globalThis.__SEREN_RUNTIME_BYPASS = true; } catch(e){} }
+    if (globalThis.__SEREN_PASSWORD) { try { globalThis.__SEREN_PASSWORD_ACTIVE = globalThis.__SEREN_PASSWORD; } catch(e){} }
+  }
+} catch(e){} })();\n`;
+
+    return preamble + resultString;
   } catch (err) {
     console.error("[Obfuscator Error]", err && (err.stack || err));
     // Fallback: return baseCode (passthrough) so the server can still provide a download.

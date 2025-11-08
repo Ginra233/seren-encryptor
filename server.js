@@ -289,47 +289,140 @@ if (looksEncrypted) {
 // --- END: bypass-injection guard ---
 
     // run obfuscator if present, with timeout
-    let resultCode = code;
-    if (obfuscator) {
-      try {
-        resultCode = await withTimeout(
-          obfuscator.obfuscateCode(code, preset, { includeAntiBypass, includeBypass, password }),
-          OBF_TIMEOUT_MS
-        );
-      } catch (err) {
-        console.error("[error] obfuscation failed or timed out:", err && err.stack ? err.stack : err);
-        await cleanup([uploadedPath]);
-        uploadedPath = null;
-        if (String(err.message || "").toLowerCase().includes("timeout")) {
-          return res.status(504).json({ error: "Obfuscation timeout", detail: "Obfuscation took too long" });
-        }
-        return res.status(502).json({ error: "Obfuscator error", detail: err && err.message ? err.message : String(err) });
-      }
-    }
+// --- REPLACEMENT: safer inject + dynamic-timeout obfuscation ---
+// --- REPLACEMENT: safer inject + dynamic-timeout obfuscation ---
+let resultCode = code;
 
-    // write output temp file
-    // 🔧 Dynamic timeout fix untuk file besar (tanpa ubah struktur)
-    const fileSizeMB = req.file.size / (1024 * 1024);
-    const dynamicTimeout = OBF_TIMEOUT_MS + Math.floor(fileSizeMB / 10) * 30000; // tambah 30 detik tiap 10MB
-    console.log(`[patch] Dynamic timeout aktif: file ${fileSizeMB.toFixed(2)}MB → timeout ${(dynamicTimeout / 1000).toFixed(1)} detik`);
+// detect packed/encrypted patterns (common packers/obfuscators)
+const looksEncrypted = /eval\(|eval\(function\s*\(|function\s*\(p,a,c,k,e,d\)|_0x[a-f0-9]{4,}|String\.fromCharCode\(|atob\(|Buffer\.from\(|function\(\){"?use strict"?/i.test(code);
 
-    // patch wrapper untuk obfuscateCode agar pakai dynamicTimeout
-    if (obfuscator) {
-      try {
-        resultCode = await withTimeout(
-          obfuscator.obfuscateCode(code, preset, { includeAntiBypass, includeBypass, password }),
-          dynamicTimeout
-        );
-      } catch (err) {
-        console.error("[error] obfuscation failed or timed out:", err && err.stack ? err.stack : err);
-        await cleanup([uploadedPath]);
-        uploadedPath = null;
-        if (String(err.message || "").toLowerCase().includes("timeout")) {
-          return res.status(504).json({ error: "Obfuscation timeout", detail: `Obfuscation took too long (>${(dynamicTimeout / 1000)}s)` });
-        }
-        return res.status(502).json({ error: "Obfuscator error", detail: err && err.message ? err.message : String(err) });
-      }
+// small debug preview (first 200 chars) to help diagnose problematic inputs
+console.log(`[debug] code preview (first 200 chars): ${String(code).slice(0,200).replace(/\n/g,' ')}...`);
+
+if (looksEncrypted) {
+  console.log("[info] Encrypted/packed file detected — using inject-only flow (no re-obfuscation).");
+
+  // create safe IIFE stub that won't break payload; only includes requested pieces
+  function createSafeStub({ includeBypass, includeAntiBypass, password }) {
+    const lines = [];
+    lines.push("(function(){");
+    lines.push("  try {");
+    lines.push("    // Seren injected bypass stub — isolated inside IIFE");
+    lines.push("    Object.defineProperty(globalThis, '__SEREN_INJECTED__', { value: true, configurable: true });");
+    lines.push("    if (typeof globalThis.__seren !== 'object') { try{ globalThis.__seren = {}; }catch(e){} }");
+    if (includeBypass) {
+      lines.push("    // includeBypass: set runtime flag");
+      lines.push("    try{ globalThis.__seren.bypass = true; }catch(e){}");
     }
+    if (includeAntiBypass) {
+      lines.push("    // includeAntiBypass: best-effort neutralize naive checks");
+      lines.push("    try{");
+      lines.push("      var _orig = Function.prototype.toString;");
+      lines.push("      Object.defineProperty(Function.prototype, 'toString', { value: function(){ return _orig.call(this); }, configurable:true });");
+      lines.push("    }catch(e){}");
+    }
+    if (password) {
+      lines.push("    try{ globalThis.__SEREN_PASSWORD = " + JSON.stringify(password) + "; }catch(e){}");
+    }
+    lines.push("  } catch(e) { /* stub safe-fail */ }");
+    lines.push("})();");
+    // separator to avoid token merging with payload
+    lines.push(";\n");
+    return lines.join("\n");
+  }
+
+  const injectStub = createSafeStub({
+    includeBypass: includeBypass,
+    includeAntiBypass: includeAntiBypass,
+    password: password
+  });
+
+  // preserve shebang if present and remove BOM
+  let payload = code;
+  let shebang = "";
+  if (payload.startsWith("#!")) {
+    const idx = payload.indexOf("\n");
+    shebang = payload.slice(0, idx + 1);
+    payload = payload.slice(idx + 1);
+  }
+  payload = payload.replace(/^\uFEFF/, "");
+
+  const injected = shebang + injectStub + payload;
+
+  // write temp output and send (with fallback to original)
+  const tmpName = `${Date.now()}_${safeOutFilename(originalName)}`;
+  const tmpPath = path.join(OUTPUT_DIR, tmpName);
+  try {
+    await fs.writeFile(tmpPath, injected, "utf8");
+    console.log("[info] Injected stub + encrypted payload written, sending to client...");
+    return res.download(tmpPath, safeOutFilename(originalName), async (err) => {
+      try { await fs.remove(tmpPath); } catch (e) {}
+      try { await fs.remove(uploadedPath); } catch (e) {}
+      if (err) {
+        console.error("[error] download after injection failed:", err);
+        // fallback: send original file raw
+        try {
+          const fallbackTmp = `${Date.now()}_fallback_${safeOutFilename(originalName)}`;
+          const fallbackPath = path.join(OUTPUT_DIR, fallbackTmp);
+          await fs.writeFile(fallbackPath, code, "utf8");
+          console.log("[info] Sending fallback (original) file instead.");
+          return res.download(fallbackPath, safeOutFilename(originalName), async () => {
+            try { await fs.remove(fallbackPath); } catch (e) {}
+            try { await fs.remove(uploadedPath); } catch (e) {}
+          });
+        } catch (e2) {
+          console.error("[fatal] fallback send failed:", e2);
+          if (!res.headersSent) res.status(500).json({ error: "Failed to send injected or fallback file", detail: String(e2) });
+        }
+      } else {
+        console.log("[ok] Injected file delivered.");
+      }
+    });
+  } catch (e) {
+    console.error("[fatal] write/send injected failed:", e);
+    // fallback send original
+    try {
+      const fallbackTmp = `${Date.now()}_fallback_${safeOutFilename(originalName)}`;
+      const fallbackPath = path.join(OUTPUT_DIR, fallbackTmp);
+      await fs.writeFile(fallbackPath, code, "utf8");
+      console.log("[info] Sending fallback (original) file due to write error.");
+      return res.download(fallbackPath, safeOutFilename(originalName), async () => {
+        try { await fs.remove(fallbackPath); } catch (e) {}
+        try { await fs.remove(uploadedPath); } catch (e) {}
+      });
+    } catch (e2) {
+      console.error("[fatal] fallback write failed:", e2);
+      if (!res.headersSent) res.status(500).json({ error: "Failed to send file", detail: String(e2) });
+    }
+  }
+}
+
+// If we reach here, file is not detected as already encrypted — proceed to obfuscator
+if (obfuscator) {
+  // dynamic timeout scaled by file size: +30s per 10MB
+  const fileSizeMB = (req.file && req.file.size) ? (req.file.size / (1024 * 1024)) : 0;
+  const dynamicTimeout = OBF_TIMEOUT_MS + Math.floor(fileSizeMB / 10) * 30000;
+  console.log(`[info] Running obfuscator (preset=${preset}) with timeout ${(dynamicTimeout/1000).toFixed(1)}s for ${fileSizeMB.toFixed(2)} MB file`);
+  try {
+    resultCode = await withTimeout(
+  obfuscator.obfuscateCode(code, preset, { includeAntiBypass, includeBypass, password, timeoutMs: dynamicTimeout }),
+  dynamicTimeout + 2000 // optional small buffer
+);
+  } catch (err) {
+    console.error("[error] obfuscation failed or timed out:", err && err.stack ? err.stack : err);
+    await cleanup([uploadedPath]);
+    uploadedPath = null;
+    if (String(err.message || "").toLowerCase().includes("timeout")) {
+      return res.status(504).json({ error: "Obfuscation timeout", detail: `Obfuscation took too long (>${(dynamicTimeout/1000)}s)` });
+    }
+    return res.status(502).json({ error: "Obfuscator error", detail: err && err.message ? err.message : String(err) });
+  }
+} else {
+  // obfuscator not loaded: passthrough (original behavior)
+  res.set("X-Seren-Warning", "obfuscator-missing");
+  console.warn("[warn] obfuscator missing — returning original file content as download");
+}
+// --- END REPLACEMENT ---
     
     const tmpName = `${Date.now()}_${outFilename}`;
     tmpPath = path.join(OUTPUT_DIR, tmpName);
