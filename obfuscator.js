@@ -1,5 +1,6 @@
-//obfuscator.patched.js (PRESETS trimmed)
-// Seren Encryptor Obfuscator Engine — patched PRESETS map
+// obfuscator.cleaned.js
+// Seren Encryptor Obfuscator Engine — PRESETS + bypass/anti-bypass/password
+// Cleaned: removed runtime preamble that injected __SEREN_RUNTIME_BYPASS / __SEREN_PASSWORD_ACTIVE
 
 const JsConfuser = require("js-confuser");
 
@@ -209,7 +210,6 @@ function getJapanxArabObfuscationConfig() {
 
 // -------------------- NEW PRESETS --------------------
 
-// Helix Core — hybrid AES-like wrapper + heavy anti-debug (best for distribution)
 function getHelixCoreConfig() {
   return {
     target: "node",
@@ -235,19 +235,16 @@ function getHelixCoreConfig() {
       tamperProtection: true,
       antiTamperRuntime: true,
     },
-    // "aes-like wrapper" simulated by adding movedDeclarations + stack obfuscation
     movedDeclarations: true,
     stack: true,
   };
 }
 
-// Spectra — size-optimized encoding, minimal runtime overhead
 function getSpectraConfig() {
   return {
     target: "node",
     compact: true,
     minify: true,
-    // avoid heavy control-flow; prioritize string encoding + compression
     controlFlowFlattening: 0,
     deadCode: 0,
     dispatcher: false,
@@ -261,13 +258,11 @@ function getSpectraConfig() {
     duplicateLiteralsRemoval: true,
     objectExtraction: true,
     opaquePredicates: false,
-    // keep runtime light
     movedDeclarations: true,
     minRuntime: true,
   };
 }
 
-// Oblivion — layered mapping + randomized symbol mapping (heavy)
 function getOblivionConfig() {
   return {
     target: "node",
@@ -301,7 +296,8 @@ function getOblivionConfig() {
   };
 }
 
-// bypas konyol
+// -------------------- Bypass / Anti-bypass / Password snippets --------------------
+
 const TBypass = `(() => {
   function fakeResponse(url) {
     if (typeof url === "string") {
@@ -358,7 +354,6 @@ const TBypass = `(() => {
   console.error = () => {};
 })();`;
 
-// -------------------- Anti-bypass snippet --------------------
 const TByypas = `(async () => {
   const fs = require("fs");
   const path = require("path");
@@ -415,7 +410,7 @@ ${originalCode}
 })();`;
 }
 
-// -------------------- Preset Map (UPDATED) --------------------
+// -------------------- PRESETS --------------------
 const PRESETS = {
   ultra: getUltraSafeConfig,
   nebula: getNebulaObfuscationConfig,
@@ -424,10 +419,12 @@ const PRESETS = {
   japan: getJapanObfuscationConfig,
   japanxarab: getJapanxArabObfuscationConfig,
   strong: getStrongObfuscationConfig,
+  helix: getHelixCoreConfig,
+  spectra: getSpectraConfig,
+  oblivion: getOblivionConfig,
 };
 
 // -------------------- Main Function --------------------
-// -------------------- Main Function (fixed) --------------------
 async function obfuscateCode(code, preset = "strong", options = {}) {
   if (typeof code !== "string") throw new Error("Code must be string");
 
@@ -435,14 +432,11 @@ async function obfuscateCode(code, preset = "strong", options = {}) {
   let baseCode = code;
 
   // If a password is provided, wrap the original code with the password UI template.
-  // Password wrapper is authoritative: it prompts before executing the real code.
   if (password) {
     const encoded = Buffer.from(password).toString("base64");
     baseCode = createPasswordTemplate(encoded, baseCode);
   } else {
     // No password: optionally prepend anti-bypass or bypass wrappers.
-    // Use the anti-bypass (TByypas) first if requested, then the bypass (TBypass) if also requested.
-    // This order keeps the more defensive wrapper closer to execution.
     if (includeAntiBypass) {
       baseCode = `${TByypas}\n${baseCode}`;
     }
@@ -469,26 +463,18 @@ async function obfuscateCode(code, preset = "strong", options = {}) {
       ? rawResult
       : (rawResult && (rawResult.code || rawResult.toString())) || String(rawResult);
 
-    // prepend a small preamble so runtime-injected stubs (globalThis.__SEREN_*) are honored
-    // this lets server-injected globals influence obfuscated runtime behavior.
-    const preamble = `(function(){ try {
-  if (typeof globalThis !== "undefined") {
-    if (globalThis.__SEREN_BYPASS) { try { globalThis.__SEREN_RUNTIME_BYPASS = true; } catch(e){} }
-    if (globalThis.__SEREN_PASSWORD) { try { globalThis.__SEREN_PASSWORD_ACTIVE = globalThis.__SEREN_PASSWORD; } catch(e){} }
-  }
-} catch(e){} })();\n`;
-
-    return preamble + resultString;
+    // NOTE: intentionally NO preamble injected here (we removed the runtime IIFE)
+    return resultString;
   } catch (err) {
     console.error("[Obfuscator Error]", err && (err.stack || err));
     // Fallback: return baseCode (passthrough) so the server can still provide a download.
     return baseCode;
   }
 }
+
 // -------------------- Exports --------------------
-// -------------------- Exports --------------------
-module.exports = { 
-  obfuscateCode, 
+module.exports = {
+  obfuscateCode,
   PRESETS,
   TBypass,
   TByypas,
