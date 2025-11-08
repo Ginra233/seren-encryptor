@@ -391,6 +391,11 @@
               </div>
             </div>
 
+<label style="display:flex;align-items:center;gap:8px;margin-top:8px">
+  <input type="checkbox" id="forceCheck">
+  <span style="color:var(--muted);font-weight:600">Force Re-Encrypt</span>
+</label>
+
             <button id="encryptBtn" class="big-btn" disabled aria-disabled="true" aria-label="Encrypt and download">
               <!-- lightning svg -->
               <svg width="18" height="18" viewBox="0 0 24 24" style="margin-right:10px" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -669,6 +674,8 @@ encryptBtn.addEventListener('click', async ()=>{
   fd.append('includeAntiBypass', bypassSwitch.classList.contains('on') ? '1' : '0');
   fd.append('includeBypass', byppassSwitch.classList.contains('on') ? '1' : '0');
   if(pwSwitch.classList.contains('on')) fd.append('password', passwordInput.value || '');
+  // --- tambahkan ini ---
+ fd.append('forceReobfuscate', forceCheck && forceCheck.checked ? '1' : '0');
 
   try{
     const res = await fetch('/encrypt', { method: 'POST', body: fd });
