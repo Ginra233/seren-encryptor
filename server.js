@@ -13,11 +13,11 @@ app.disable("x-powered-by");
 
 // Config
 const PORT = Number(process.env.PORT || 8080);
-const MAX_FILE_MB = Number(process.env.MAX_FILE_MB || 50);
+const MAX_FILE_MB = Number(process.env.MAX_FILE_MB || 10);
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 const OUTPUT_DIR = path.join(__dirname, "output");
-const OBF_TIMEOUT_MS = Number(process.env.OBF_TIMEOUT_MS || 120000);
+const OBF_TIMEOUT_MS = Number(process.env.OBF_TIMEOUT_MS || 60000); // 60s default
 
 // Ensure folders exist
 fs.ensureDirSync(UPLOAD_DIR);
@@ -84,20 +84,6 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-// --- DEBUG & FIX CORS for Railway ---
-app.use((req, res, next) => {
-  console.log(`[REQ] ${req.method} ${req.path} | Origin: ${req.headers.origin || '-'} | CT: ${req.headers['content-type'] || '-'}`);
-  next();
-});
-
-app.options('*', (req, res) => {
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-  });
-  res.sendStatus(204);
-});
 
 // Serve static frontend if exists
 const publicPath = path.join(__dirname, "public");
@@ -187,25 +173,26 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
     }
 
     // run obfuscator if present, with timeout
-// run obfuscator if present, with timeout
-let resultCode = code;
-if (obfuscator) {
-  try {
-    // run with timeout to avoid long blocking
-    resultCode = await withTimeout(
-      obfuscator.obfuscateCode(code, preset, { includeAntiBypass, includeBypass, password }),
-      OBF_TIMEOUT_MS
-    );
-  } catch (err) {
-    console.error("[error] obfuscation failed or timed out:", err && err.stack ? err.stack : err);
-    await cleanup([uploadedPath]);
-    uploadedPath = null;
-    if (String(err.message || "").toLowerCase().includes("timeout")) {
-      return res.status(504).json({ error: "Obfuscation timeout", detail: "Obfuscation took too long" });
+    let resultCode = code;
+    if (obfuscator) {
+      try {
+        // run with timeout to avoid long blocking
+        resultCode = await withTimeout(
+          obfuscator.obfuscateCode(code, preset, { includeAntiBypass, password }),
+          obfuscator.obfuscateCode(code, preset, { includeBypass}),
+          OBF_TIMEOUT_MS
+        );
+      } catch (err) {
+        console.error("[error] obfuscation failed or timed out:", err && err.stack ? err.stack : err);
+        // cleanup uploaded file before responding
+        await cleanup([uploadedPath]);
+        uploadedPath = null;
+        if (String(err.message || "").toLowerCase().includes("timeout")) {
+          return res.status(504).json({ error: "Obfuscation timeout", detail: "Obfuscation took too long" });
+        }
+        return res.status(502).json({ error: "Obfuscator error", detail: err && err.message ? err.message : String(err) });
+      }
     }
-    return res.status(502).json({ error: "Obfuscator error", detail: err && err.message ? err.message : String(err) });
-  }
-}
 
     // write output temp file
     const tmpName = `${Date.now()}_${outFilename}`;

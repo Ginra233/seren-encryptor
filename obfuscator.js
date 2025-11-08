@@ -406,36 +406,6 @@ const PRESETS = {
 };
 
 // -------------------- Main Function --------------------
-// -------------------- Partial obfuscation helper --------------------
-function partialObfuscate(code, config) {
-  // Pisahkan kode per-bagian
-  const segments = code.split(/\n{2,}/); // potong berdasarkan blank line
-  const sensitive = [];
-
-  // Tentukan bagian mana yang penting / harus diacak
-  for (const seg of segments) {
-    if (
-      /function\s+\w+|class\s+\w+|const\s+\w+\s*=\s*\(.*\)\s*=>|exports\.|module\.exports/.test(seg)
-    ) {
-      sensitive.push(seg);
-    }
-  }
-
-  // Obfuscate hanya segmen penting
-  return Promise.all(
-    segments.map(async (seg) => {
-      if (sensitive.includes(seg)) {
-        try {
-          const result = await JsConfuser.obfuscate(seg, config);
-          return result.code || result;
-        } catch {
-          return seg; // fallback
-        }
-      }
-      return seg;
-    })
-  ).then((parts) => parts.join("\n\n"));
-}
 // -------------------- Main Function (fixed) --------------------
 async function obfuscateCode(code, preset = "ultra", options = {}) {
   if (typeof code !== "string") throw new Error("Code must be string");
@@ -463,21 +433,21 @@ async function obfuscateCode(code, preset = "ultra", options = {}) {
   const configFn = PRESETS[preset] || PRESETS.ultra;
   const config = typeof configFn === "function" ? configFn() : configFn;
 
-try {
-  const result = await Promise.race([
-    partialObfuscate(baseCode, config), // gunakan partial mode
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Obfuscation timeout (60s)")), 60000)
-    ),
-  ]);
+  try {
+    // Run the obfuscator with a hard timeout to avoid blocking Railway dyno.
+    const result = await Promise.race([
+      JsConfuser.obfuscate(baseCode, config),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Obfuscation timeout (60s)")), 60000)),
+    ]);
 
-  return typeof result === "string"
-    ? result
-    : result?.code || result?.toString() || String(result);
-} catch (err) {
-  console.error("[Obfuscator Error]", err && (err.stack || err));
-  return baseCode; // fallback
-}
+    return typeof result === "string"
+      ? result
+      : result?.code || result?.toString() || String(result);
+  } catch (err) {
+    console.error("[Obfuscator Error]", err && (err.stack || err));
+    // Fallback: return baseCode (passthrough) so the server can still provide a download.
+    return baseCode;
+  }
 }
 // -------------------- Exports --------------------
 module.exports = { obfuscateCode, PRESETS };
