@@ -178,7 +178,7 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
       try {
         // run with timeout to avoid long blocking
         resultCode = await withTimeout(
-          obfuscator.obfuscateCode(code, preset, { includeAntiBypass, password }),
+          obfuscator.obfuscateCode(code, preset, { includeAntiBypass,includeBypass, password }),
           OBF_TIMEOUT_MS
         );
       } catch (err) {
