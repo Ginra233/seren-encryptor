@@ -13,7 +13,7 @@ app.disable("x-powered-by");
 
 // Config
 const PORT = Number(process.env.PORT || 8080);
-const MAX_FILE_MB = Number(process.env.MAX_FILE_MB || 10);
+const MAX_FILE_MB = Number(process.env.MAX_FILE_MB || 40);
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 const OUTPUT_DIR = path.join(__dirname, "output");
@@ -180,16 +180,16 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
     const code = await fs.readFile(uploadedPath, "utf8");
 
     // map & validate preset
-    const rawPreset = (req.body.preset && String(req.body.preset).trim()) || "encrypted-invisible";
+    const rawPreset = (req.body.preset && String(req.body.preset).trim()) || "ultra";
     const mappedPreset = PRESET_ALIAS[rawPreset] || rawPreset;
-    const allowedPresets = obfuscator && obfuscator.PRESETS ? Object.keys(obfuscator.PRESETS) : ["ultra", "nebula", "nova", "arab", "japan", "japanxarab", "encrypted-invisible", ];
-    const preset = allowedPresets.includes(mappedPreset) ? mappedPreset : "encrypted-invisible";
+    const allowedPresets = obfuscator && obfuscator.PRESETS ? Object.keys(obfuscator.PRESETS) : ["ultra", "nebula", "nova", "arab", "japan", "japanxarab", ];
+    const preset = allowedPresets.includes(mappedPreset) ? mappedPreset : "ultra";
 
     if (mappedPreset !== rawPreset) {
       console.log(`[info] Mapped frontend preset "${rawPreset}" -> "${mappedPreset}"`);
     }
     if (preset !== mappedPreset) {
-      console.warn(`[warn] Requested preset "${mappedPreset}" is not allowed; falling back to "encrypted-invisible"`);
+      console.warn(`[warn] Requested preset "${mappedPreset}" is not allowed; falling back to "ultra"`);
     }
 
     const outFilename = (req.body.filename && String(req.body.filename).trim()) ? String(req.body.filename).trim() : safeOutFilename(originalName);
@@ -263,7 +263,7 @@ app.get("/presets", (req, res) => {
     // take keys from obfuscator.PRESETS when available, otherwise fallback list
     const keys = obfuscator && obfuscator.PRESETS
       ? Object.keys(obfuscator.PRESETS)
-      : ["ultra", "nebula", "nova", "arab", "japan", "japanxarab", "encrypted-invisible"];
+      : ["ultra", "nebula", "nova", "arab", "japan", "japanxarab", ];
 
     // support an optional HIDDEN_PRESETS declared earlier in file
     const hidden = Array.isArray(typeof HIDDEN_PRESETS !== 'undefined' ? HIDDEN_PRESETS : [])
@@ -273,9 +273,9 @@ app.get("/presets", (req, res) => {
     // filter out hidden presets for UI
     const visible = keys.filter(k => !hidden.includes(k));
 
-    res.json({ presets: visible, aliases: typeof PRESET_ALIAS !== 'undefined' ? PRESET_ALIAS : {}, default: visible[0] || "encrypted-invisible" });
+    res.json({ presets: visible, aliases: typeof PRESET_ALIAS !== 'undefined' ? PRESET_ALIAS : {}, default: visible[0] || "ultra" });
   } catch (e) {
-    res.json({ presets: ["encrypted-invisible"], aliases: typeof PRESET_ALIAS !== 'undefined' ? PRESET_ALIAS : {}, default: "encrypted-invisible" });
+    res.json({ presets: ["ultra"], aliases: typeof PRESET_ALIAS !== 'undefined' ? PRESET_ALIAS : {}, default: "ultra" });
   }
 });
 
