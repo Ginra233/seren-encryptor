@@ -6,6 +6,7 @@ const multer = require("multer");
 const fs = require("fs-extra");
 const path = require("path");
 const cors = require("cors");
+const { obfuscateCode } = require("./obfuscator");
 
 const app = express();
 app.disable("x-powered-by");
@@ -76,7 +77,11 @@ function withTimeout(promise, ms) {
 }
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET','POST','OPTIONS'],
+  allowedHeaders: ['Content-Type'],
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
