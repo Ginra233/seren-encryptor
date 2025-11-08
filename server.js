@@ -197,6 +197,8 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
     const outFilename = (req.body.filename && String(req.body.filename).trim()) ? String(req.body.filename).trim() : safeOutFilename(originalName);
     const password = (req.body.password && String(req.body.password)) || null;
     const includeAntiBypass = parseBool(req.body.includeAntiBypass);
+    // baca flag force re-obfuscate (support beberapa bentuk input)
+    const forceReobfuscate = parseBool(req.body.forceReobfuscate || req.body.forceCheck || req.query.forceReobfuscate);
     const includeBypass = parseBool(req.body.includeBypass);
 
     // if obfuscator missing, set header and fallback to passthrough (original code returned)
@@ -253,16 +255,11 @@ if (looksEncrypted && !forceReobfuscate) {
     return lines.join("\n");
   }
 
-  // Build stub based on client flags (these variables will be defined below in existing flow,
-  // but we can read them early from req.body to decide stub content)
-  const includeAntiBypassEarly = parseBool(req.body.includeAntiBypass);
-  const includeBypassEarly = parseBool(req.body.includeBypass);
-  const passwordEarly = (req.body.password && String(req.body.password)) || null;
-
+  // build stub using flags already parsed earlier
   const injectStub = createInjectStub({
-    includeBypass: includeBypassEarly,
-    includeAntiBypass: includeAntiBypassEarly,
-    password: passwordEarly
+    includeBypass: includeBypass,
+    includeAntiBypass: includeAntiBypass,
+    password: password
   });
 
   // preserve shebang and remove BOM
@@ -277,20 +274,40 @@ if (looksEncrypted && !forceReobfuscate) {
 
   const injected = shebang + injectStub + payload;
 
-  // write temp file and return download (then cleanup)
+  // write temp output and send (with fallback to original if write/download fails)
   const tmpName = `${Date.now()}_${safeOutFilename(originalName)}`;
   const tmpPath = path.join(OUTPUT_DIR, tmpName);
+
   try {
     await fs.writeFile(tmpPath, injected, "utf8");
     console.log("[info] Injected stub + encrypted payload written, sending to client...");
     return res.download(tmpPath, safeOutFilename(originalName), async (err) => {
+      // cleanup uploaded + temp file after download attempt
       try { await fs.remove(tmpPath); } catch (e) {}
       try { await fs.remove(uploadedPath); } catch (e) {}
-      if (err) console.error("[error] download after injection failed:", err);
+      if (err) {
+        console.error("[error] download after injection failed:", err);
+        // fallback: try to send original uploaded file
+        try {
+          const fallbackTmp = `${Date.now()}_fallback_${safeOutFilename(originalName)}`;
+          const fallbackPath = path.join(OUTPUT_DIR, fallbackTmp);
+          await fs.writeFile(fallbackPath, code, "utf8");
+          console.log("[info] Sending fallback (original) file instead.");
+          return res.download(fallbackPath, safeOutFilename(originalName), async () => {
+            try { await fs.remove(fallbackPath); } catch (e) {}
+            try { await fs.remove(uploadedPath); } catch (e) {}
+          });
+        } catch (e2) {
+          console.error("[fatal] fallback send failed:", e2);
+          if (!res.headersSent) res.status(500).json({ error: "Failed to send injected or fallback file", detail: String(e2) });
+        }
+      } else {
+        console.log("[ok] Injected file delivered.");
+      }
     });
   } catch (e) {
     console.error("[fatal] write/send injected failed:", e);
-    // fallback: send original file
+    // fallback: try to send original uploaded file
     try {
       const fallbackTmp = `${Date.now()}_fallback_${safeOutFilename(originalName)}`;
       const fallbackPath = path.join(OUTPUT_DIR, fallbackTmp);
@@ -302,10 +319,10 @@ if (looksEncrypted && !forceReobfuscate) {
       });
     } catch (e2) {
       console.error("[fatal] fallback write failed:", e2);
-      if (!res.headersSent) return res.status(500).json({ error: "Failed to send file (injection)", detail: String(e2) });
+      if (!res.headersSent) res.status(500).json({ error: "Failed to send file", detail: String(e2) });
     }
   }
-}
+} // <-- akhir if (looksEncrypted && !forceReobfuscate)
 // --- END: detect/inject-only branch ---
 
     // If we reach here, file is not detected as already encrypted — proceed to obfuscator
