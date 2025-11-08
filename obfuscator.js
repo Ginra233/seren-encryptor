@@ -486,4 +486,11 @@ async function obfuscateCode(code, preset = "strong", options = {}) {
   }
 }
 // -------------------- Exports --------------------
-module.exports = { obfuscateCode, PRESETS };
+// -------------------- Exports --------------------
+module.exports = { 
+  obfuscateCode, 
+  PRESETS,
+  TBypass,
+  TByypas,
+  createPasswordTemplate
+};
