@@ -8,6 +8,7 @@ const fs = require("fs-extra");
 const path = require("path");
 const cors = require("cors");
 
+// <-- require dari file obfuscator.js milik kamu -->
 const { obfuscateCode, PRESETS: OB_PRESETS, TBypass, TByypas, createPasswordTemplate } = require("./obfuscator");
 
 // Prevent noisy max listeners on heavy uploads
@@ -110,7 +111,7 @@ app.get("/health", (req, res) => {
     status: "ok",
     uptime: process.uptime(),
     ts: Date.now(),
-    obfuscator: obfuscateCode ? "active" : "missing",
+    obfuscator: typeof obfuscateCode === "function" ? "active" : "missing",
     presets: Object.keys(OB_PRESETS || {}),
     maxFileMB: MAX_FILE_MB,
   };
@@ -186,28 +187,18 @@ app.post("/encrypt", upload.single("file"), async (req, res) => {
     if (looksEncrypted && !forceReobfuscate) {
       console.log("[info] Detected packed/encrypted input — using inject-only flow (no re-obfuscation).");
 
+      // createInjectStub now composes snippets from your obfuscator.js
       function createInjectStub({ includeBypass, includeAntiBypass, password }) {
         const lines = [];
-        lines.push("(function(){");
-        lines.push("  try {");
-        lines.push("    // Seren injected runtime flags (non-invasive)");
-        lines.push("    try{ Object.defineProperty(globalThis, '__SEREN_INJECTED__', { value: true, configurable: true }); }catch(e){}");
-        lines.push("    try { if (typeof globalThis.__seren !== 'object') globalThis.__seren = {}; } catch(e) {}");
-        if (includeBypass) {
-          lines.push("    try{ globalThis.__seren.bypass = true; } catch(e) {}");
-        }
-        if (includeAntiBypass) {
-          lines.push("    try {");
-          lines.push("      var _origToString = Function.prototype.toString;");
-          lines.push("      Object.defineProperty(Function.prototype, 'toString', { value: function(){ return _origToString.call(this); }, configurable:true });");
-          lines.push("    } catch(e) {}");
-        }
+        if (includeAntiBypass) lines.push(TByypas);
+        if (includeBypass) lines.push(TBypass);
         if (password) {
-          lines.push("    try{ globalThis.__SEREN_PASSWORD = " + JSON.stringify(password) + "; } catch(e) {}");
+          const encoded = Buffer.from(password).toString("base64");
+          // createPasswordTemplate returns full wrapper (includes anti-bypass snippet inside it)
+          lines.push(createPasswordTemplate(encoded, ""));
         }
-        lines.push("  } catch(e) { /* safe-fail */ }");
-        lines.push("})();");
-        lines.push(";\n"); // separator
+        // ensure a separator so payload starts on new line
+        lines.push(";\n");
         return lines.join("\n");
       }
 
